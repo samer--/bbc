@@ -1,20 +1,21 @@
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
-:- use_module(library(insist)).
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_sgml_plugin)).
-:- use_module(library(memo)).
 :- use_module(library(lambda)).
+:- use_module(library(fileutils)).
+:- use_module(library(insist)).
+:- use_module(library(memo)).
 
 /*
    see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
    schedule/entry/key
    /schedule/entry/pid
-     http://bbc.co.uk/programmes/:pid
-     http://bbc.co.uk/programmes/:pid/microsite
-     http://bbc.co.uk/programmes/:pid.rdf - returns an XML document in the RDF specification about the programme.
 */
+
+on_accept(Query, Goal) :- call_cleanup((Query, Success=true), (Success=true, Goal)).
+play_on_accept(E, Query) :- on_accept(Query, play_entry(_, E)).
 
 atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
@@ -23,7 +24,7 @@ get_as(xml, URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)]))
 get_as(pls, URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
 uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
-   format(atom(URL), Pattern, Args),
+   format(string(URL), Pattern, Args),
    get_as(Fmt, URL, Result).
 
 player(gst123).
@@ -40,10 +41,9 @@ mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
 mediaset_type(live_only, MS) :- member(MS, ['apple-icy-mp3a', 'http-icy-aac-lc-a']).
 
-
 service_availability(S, xml, 'http://www.bbc.co.uk/radio/aod/availability/~s.xml'-[S]) :- service(S).
 playlist(PID, json, 'http://www.bbc.co.uk/programmes/~s/playlist.json'-[PID]).
-u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :- 
+u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    URLForm = 'http://open.live.bbc.co.uk/mediaselector/6/select/version/2.0/mediaset/~s/format/~s/vpid/~s',
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
@@ -53,7 +53,7 @@ service_schedule(S, Schedule) :- insist(uget(service_availability(S), [Schedule]
 :- volatile_memo pid_playlist(+atom, -dict).
 pid_playlist(PID, Playlist) :- uget(playlist(PID), Playlist).
 
-:- volatile_memo mediaset(+atom, +atom, +atom, -compount).
+% :- volatile_memo mediaset(+atom, +atom, +atom, -compount).
 mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
 
 service_entry(S, E) :-
@@ -61,7 +61,7 @@ service_entry(S, E) :-
    xpath(Schedule, /schedule/entry, E).
 
 title_contains(Sub, E) :-
-   xpath(E, title(text), T), 
+   xpath(E, title(text), T),
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
    atom_contains(TLower, SubLower).
 
@@ -72,7 +72,7 @@ user:portray(element(entry, As, Es)) :-
 play_entry(Fmt, E) :-
    maplist(xpath(E), [pid(text), title(text)], [PID, Title]),
    xpath(E, links/link(@transferformat=Fmt, text), URL),
-   format('Playing ~w: ~w...\n', [PID, Title]),
+   format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
    play_url(URL).
 
 play_connection(Conn) :- play_url(Conn.href).
@@ -82,34 +82,62 @@ play_url(URL) :-
    format(string(C), '~w "~s"', [Player, URL]),
    shell(C).
 
-prop(E, vpid(VPID)) :- xpath(E, /entry(@pid), VPID).
-prop(E, pid(PID)) :- xpath(E, pid(text), PID).
-prop(E, title(T)) :- xpath(E, title(text), T).
+xpath_attr_time(E, Path, A, Time) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
+xpath_interval(E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), [start, end], [T1, T2]).
+
+prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
+prop(E, pid(X)) :- xpath(E, pid(text), X).
+prop(E, title(X)) :- xpath(E, title(text), X).
+prop(E, service(X)) :- xpath(E, service(text), X).
+prop(E, synopsis(X)) :- xpath(E, synopsis(text), X).
+prop(E, duration(X)) :- xpath(E, broadcast(@duration(number)), X).
+prop(E, availability(X)) :- xpath_interval(E, availability, X).
+prop(E, link(F,URL)) :- xpath(E, links/link(@transferformat=F,text), URL).
+prop(E, parent(PID, Type, Name)) :-
+   xpath(E, parents/parent, P),
+   maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]).
+
+xbrowse(element(_,As,_), @A, V) :- member(A=V, As).
+xbrowse(element(_,_,Es), Path, Val) :- member(E, Es), xbrowse_sub(E, Path, Val).
+xbrowse_sub(element(Tag,As,Es), Tag:Path, Val) :- xbrowse(element(Tag,As,Es), Path, Val).
+xbrowse_sub(Text, text, Text) :- Text \= element(_,_,_).
 
 pl_vpid(PL, PL.defaultAvailableVersion.pid).
 pl_vpid(PL, VPID) :- member(V, PL.allAvailableVersions), VPID = V.pid.
+in_interval(A-B, X) :- A =< X, X =< B.
 
-entry_connection(MST, E, C) :-
-   prop(E, vpid(VPID)), 
+media_connection(M, C) :- member(C, M.connection).
+entry_media(MST, E, M) :-
+   prop(E, vpid(VPID)),
+   mediaset_type(_, MST),
    catch(mediaset(json, MST, VPID, MS), _, fail),
-   member(M, MS.media), M.bitrate = "320", 
-   member(C, M.connection). 
+   member(M, MS.media).
 
-service_entry_connection(MST, Service, E, C) :-
-   service_entry(Service, E), 
-   entry_connection(MST, E, C),
-   C.transferFormat="hls", C.protocol="http", 
+log_failure(G, Desc) :- G -> true; debug(bbc, 'failed: ~p', [Desc]), fail.
+service_entry_url(Strategy, Now, Service, E, URL) :-
+   service_entry(Service, E),
+   log_failure(prop(E, availability(Interval)), no_availability(E)),
+   log_failure(in_interval(Interval, Now), not_currently_available(E)),
+   log_failure(entry_url(Strategy, E, URL), no_entry_url(Strategy, E)).
+
+entry_url(redir(Fmt), E, HREF) :- prop(E, link(Fmt, HREF)).
+entry_url(best_hls, E, URL) :-
+   aggregate(max(B, Us), setof(U, entry_bitrate_hls_url(E, B, U), Us), max(_, URLs)),
+   insist(URLs = [URL]).
+
+entry_bitrate_hls_url(E, BR, HREF) :-
+   entry_media('iptv-all', E, M), number_string(BR, M.bitrate),
+   media_connection(M, C), C >:< _{transferFormat:"hls", protocol:"http", href:HREF},
    atom_contains(C.supplier, 'akamai').
 
-write_service_playlist(MST, Service) :-
+write_playlist(EntryURL) :-
+   writeln(user_error, 'Writing playlist...'),
    writeln('#EXTM3U'),
-   forall(service_entry_connection(MST, Service, E, C),
-          (prop(E, title(Title)), format('#EXTINF:-1, ~s\n', [Title]), writeln(C.href))).
+   forall(call(EntryURL, E, URL),
+          (prop(E, title(Title)), format('#EXTINF:-1, ~s\n', [Title]), writeln(URL))).
 
 save_service_playlist(Dir, Service) :-
-   service(Service),
+   service(Service), get_time(Now),
    format(string(FN), '~s/~s.m3u', [Dir, Service]),
-   setup_call_cleanup(open(FN, write, S, []), 
-                      with_output_to(S, write_service_playlist('iptv-all', Service)), 
-                      close(S)).
+   with_output_to_file(FN, write_playlist(service_entry_url(best_hls, Now, Service))).
 % vim: set filetype=prolog
