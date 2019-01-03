@@ -106,9 +106,9 @@ write_service_playlist(MST, Service) :-
    forall(service_entry_connection(MST, Service, E, C),
           (prop(E, title(Title)), format('#EXTINF:-1, ~s\n', [Title]), writeln(C.href))).
 
-save_service_playlist(Service) :-
+save_service_playlist(Dir, Service) :-
    service(Service),
-   format(string(FN), '~s.m3u', [Service]),
+   format(string(FN), '~s/~s.m3u', [Dir, Service]),
    setup_call_cleanup(open(FN, write, S, []), 
                       with_output_to(S, write_service_playlist('iptv-all', Service)), 
                       close(S)).
