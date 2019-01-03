@@ -1,8 +1,8 @@
-% Player process handling
+% MPlayer process handling
+% See http://www.mplayerhq.hu/DOCS/tech/slave.txt for MPlayer slave mode commands
 
 :- use_module(library(fileutils)).
 :- use_module(library(typedef)).
-% :- use_module(library(process)).
 
 :- type pid == ground.
 :- type stream == \is_stream.
@@ -12,19 +12,29 @@
 
 file_search_path(music,'~/Music').
 
-music_file(Spec,File) :-
-   find_files(under(Spec,,'*.{ogg,mp3,aac}'),File).
+%% mplayer(+File:path, -Status) is det.
+%  Runs MPlayer in slave mode on given file, sending commands from user_input through
+%  to MPlayer and printing output from MPlayer on user_output.
+mplayer(File,Status) :-
+   setup_call_cleanup( start_mplayer(File,proc(PID,In,Out)),
+                       manage_mplayer(PID,In,Out),
+                       process_wait(PID,Status)).
 
-%% mplayer( +F:filename, -P:processs) is det.
-mplayer(File,proc(PID,In,Out)) :-
+%% music_file(+Spec:filespec, -F:path) is nondet.
+% Succeeds once for each music file under given path spec.
+music_file(Spec,File) :-
+   find_files(under(Spec,'*.{ogg,mp3,aac}'),File).
+
+%% start_mplayer( +F:filename, -P:processs) is det.
+start_mplayer(File,proc(PID,In,Out)) :-
    process_create(path(mplayer),['-slave','-quiet',File],
                   [stdin(pipe(In)),stdout(pipe(Out)),stderr(null),process(PID)]).
 
-run_mplayer(PID,In,Out) :-
+manage_mplayer(PID,In,Out) :-
   set_stream(In,close_on_abort(false)),
   set_stream(Out,close_on_abort(false)),
-  catch( handle_events(PID,In,Out), Ex,
-         (process_kill(PID),throw(Ex))).
+  catch(handle_events(PID,In,Out), Ex,
+        (process_kill(PID),throw(Ex))).
 
 handle_events(PID,In,Out) :-
   wait_for_input([user_input,Out],[R|_],infinite),
@@ -48,9 +58,3 @@ handle_event_from(2,PID,In,Out) :-
    ;  put_char(current_output,C),
       handle_events(PID,In,Out)
    ).
-
-with_mplayer(File,Status) :-
-   setup_call_cleanup( mplayer(File,proc(PID,In,Out)),
-                       run_mplayer(PID,In,Out),
-                       process_wait(PID,Status)).
-
