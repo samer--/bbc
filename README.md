@@ -38,4 +38,4 @@ and their stream URLs up to date.
 
 ## swiplayer - Prolog-based web server for exploring BBC content
 
-This not even quarter-baked, just the beginnings of an idea -- come bake later!
+This not even quarter-baked, just the beginnings of an idea -- come back later!
