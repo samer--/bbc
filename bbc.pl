@@ -16,8 +16,9 @@
 
 on_accept(Query, Goal) :- call_cleanup((Query, Success=true), (Success=true, Goal)).
 play_on_accept(E, Query) :- on_accept(Query, play_entry(_, E)).
-
+log_failure(G, Desc) :- G -> true; debug(bbc, 'failed: ~p', [Desc]), fail.
 atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
+
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
 get_as(xml, URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
@@ -65,10 +66,6 @@ title_contains(Sub, E) :-
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
    atom_contains(TLower, SubLower).
 
-user:portray(element(entry, As, Es)) :-
-   maplist(xpath(element(entry, As, Es)), [/entry(@pid), title(text)], [PID, Title]),
-   format('<~w|~s>', [PID, Title]).
-
 play_entry(Fmt, E) :-
    maplist(xpath(E), [pid(text), title(text)], [PID, Title]),
    xpath(E, links/link(@transferformat=Fmt, text), URL),
@@ -82,7 +79,7 @@ play_url(URL) :-
    format(string(C), '~w "~s"', [Player, URL]),
    shell(C).
 
-xpath_attr_time(E, Path, A, Time) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
+xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
 xpath_interval(E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), [start, end], [T1, T2]).
 
 prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
@@ -104,16 +101,21 @@ xbrowse_sub(Text, text, Text) :- Text \= element(_,_,_).
 
 pl_vpid(PL, PL.defaultAvailableVersion.pid).
 pl_vpid(PL, VPID) :- member(V, PL.allAvailableVersions), VPID = V.pid.
-in_interval(A-B, X) :- A =< X, X =< B.
+in_interval(ts(A)-ts(B), X) :- A =< X, X =< B.
 
 media_connection(M, C) :- member(C, M.connection).
-entry_media(MST, E, M) :-
+
+mediaset_expiry(MS, Expiry) :-
+   member(M, MS.media), media_connection(M, C),
+   parse_time(C.authExpires, Expiry).
+
+entry_media_expiry(MST, E, M, ts(MinExp)) :-
    prop(E, vpid(VPID)),
    mediaset_type(_, MST),
    catch(mediaset(json, MST, VPID, MS), _, fail),
+   aggregate(min(Exp), mediaset_expiry(MS, Exp), MinExp),
    member(M, MS.media).
 
-log_failure(G, Desc) :- G -> true; debug(bbc, 'failed: ~p', [Desc]), fail.
 service_entry_url(Strategy, Now, Service, E, URL) :-
    service_entry(Service, E),
    log_failure(prop(E, availability(Interval)), no_availability(E)),
@@ -126,7 +128,7 @@ entry_url(best_hls, E, URL) :-
    insist(URLs = [URL]).
 
 entry_bitrate_hls_url(E, BR, HREF) :-
-   entry_media('iptv-all', E, M), number_string(BR, M.bitrate),
+   entry_media_expiry('iptv-all', E, M, _), number_string(BR, M.bitrate),
    media_connection(M, C), C >:< _{transferFormat:"hls", protocol:"http", href:HREF},
    atom_contains(C.supplier, 'akamai').
 
@@ -134,10 +136,17 @@ write_playlist(EntryURL) :-
    writeln(user_error, 'Writing playlist...'),
    writeln('#EXTM3U'),
    forall(call(EntryURL, E, URL),
-          (prop(E, title(Title)), format('#EXTINF:-1, ~s\n', [Title]), writeln(URL))).
+          (prop(E, title(Title)), prop(E, duration(Dur)),
+           format('#EXTINF:~d, ~s\n', [Dur, Title]), writeln(URL))).
 
 save_service_playlist(Dir, Service) :-
    service(Service), get_time(Now),
    format(string(FN), '~s/~s.m3u', [Dir, Service]),
    with_output_to_file(FN, write_playlist(service_entry_url(best_hls, Now, Service))).
+
+user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
+user:portray(element(entry, As, Es)) :-
+   maplist(xpath(element(entry, As, Es)), [/entry(@pid), title(text)], [PID, Title]),
+   format('<~w|~s>', [PID, Title]).
+
 % vim: set filetype=prolog
