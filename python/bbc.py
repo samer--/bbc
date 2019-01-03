@@ -1,40 +1,32 @@
 #!/usr/bin/env python
 import json
 from urllib import urlopen
-#from xml.etree import ElementTree as ET
-from pytools.basetools import with_resource, unsingleton, extend, pair_with, conj, fst, snd, identity, if_none_call, delay, for_each, print_
-from pytools.dicttools import has_key_with_val, key_pair, git
-from pytools.optionparsers import parse_args, pos, a, opt, val, default, one_of, run, flag, with_parsed_args
+from pytools.basetools import with_resource, extend, conj, fst, snd, delay, for_each, print_
+from pytools.dicttools import has_key_with_val, key_pair
+from pytools.optionparsers import pos, a, opt, val, default, one_of, run, flag, with_parsed_args
 
 has = delay(has_key_with_val)
-def lguard(pred, x): return [x] if pred(x) else [] 
+def lguard(pred, x): return [x] if pred(x) else []
 
 transfer_format, protocol, bitrate = tuple(map(has, ['transferFormat', 'protocol', 'bitrate']))
-# proto: http, https, rtmtp? [optional]
-parsers = {'json': json.load} #, 'xml': ET.parse}
 namespaces = {'ms': 'http://bbc.co.uk/2008/mp/mediaselection'}
-mediasets = ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all', 
+mediasets = ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all',
              'apple_icy-mp3a', 'http-icy-aac-lc-a']
 def playlist(pid): return json.load, ('http://www.bbc.co.uk/programmes/%s/playlist.json' % pid)
-def mediaset(fmt, ver, mediaset, vpid): 
-   return parsers[fmt], ('http://open.live.bbc.co.uk/mediaselector/%s/select/version/2.0/mediaset/%s/format/%s/vpid/%s' % (ver, mediaset, fmt, vpid))
+def mediaset(ver, mediaset, vpid):
+    return json.load, ('http://open.live.bbc.co.uk/mediaselector/%s/select/version/2.0/mediaset/%s/format/json/vpid/%s' % (ver, mediaset, vpid))
 
 def findall(path, et): return et.findall(path, namespaces)
 def pair_with_closer(s): return s, s.close
 def uget((parse, url)): return with_resource(lambda: pair_with_closer(urlopen(url)), parse)
-def vpid(info): return info['defaultAvailableVersion']['pid'] 	
+def vpid(info): return info['defaultAvailableVersion']['pid']
 
-def dash_for_ms(pred, ms): 
-   def dash_for_conn(conn):   return map(key_pair('priority', 'href'), lguard(pred, conn))
-   def dash_for_media(media): return extend(dash_for_conn, media['connection'])
-   return extend(dash_for_media, ms['media'])
+def dash_for_ms(pred, ms):
+    def dash_for_conn(conn):   return map(key_pair('priority', 'href'), lguard(pred, conn))
+    def dash_for_media(media): return extend(dash_for_conn, media['connection'])
+    return extend(dash_for_media, ms['media'])
 
-def dash_for_ms_xml(pred, ms): 
-	def dash_for_conn(conn_et): return map(key_pair('priority', 'href'), lguard(pred, conn_et.attrib))
-	def dash_for_media(media):  return extend(dash_for_conn, findall('ms:connection', media))
-	return extend(dash_for_media,  findall('ms:media', ms))
-
-@with_parsed_args('BBC stream lookup', 
+@with_parsed_args('BBC stream lookup',
                   [ pos('pid', a(str), 'PID of desired programme')
                   , opt('-v', '--is_vpid',  flag, 'If true, then PID is already a VPID, no need to lookup')
                   , opt('-a', '--all',      flag, 'If true, then print all matching stream URLs')
@@ -42,11 +34,11 @@ def dash_for_ms_xml(pred, ms):
                   , opt('-r', '--ver',      val(one_of(['5', '6']), default('6')), 'mediaselector version number')
                   , opt('-f', '--format',   val(one_of(['dash', 'hls']), default('dash')), 'Transfer format')
                   , opt('-p', '--protocol', val(one_of(['http', 'https']), default('http')), 'Transfer protocol')
-                  , opt('-m', '--mediaset', val(one_of(mediasets), default('pc')), 'Mediaset identifier') 
+                  , opt('-m', '--mediaset', val(one_of(mediasets), default('pc')), 'Mediaset identifier')
                   ])
-def dash(opts): 
-   ms = uget(mediaset('json', opts.ver, opts.mediaset, opts.pid if opts.is_vpid else vpid(uget(playlist(opts.pid)))))
-   urls = map(snd, sorted(dash_for_ms(conj(transfer_format(opts.format), protocol(opts.protocol)), ms), key=fst))
-   for_each(print_, urls if opts.all else urls[opts.index:opts.index+1])
+def dash(opts):
+    ms = uget(mediaset(opts.ver, opts.mediaset, opts.pid if opts.is_vpid else vpid(uget(playlist(opts.pid)))))
+    urls = map(snd, sorted(dash_for_ms(conj(transfer_format(opts.format), protocol(opts.protocol)), ms), key=fst))
+    for_each(print_, urls if opts.all else urls[opts.index:opts.index+1])
 
 if __name__ == '__main__': run(dash)
