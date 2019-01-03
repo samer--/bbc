@@ -9,14 +9,12 @@ has = delay(has_key_with_val)
 def lguard(pred, x): return [x] if pred(x) else []
 
 transfer_format, protocol, bitrate = tuple(map(has, ['transferFormat', 'protocol', 'bitrate']))
-namespaces = {'ms': 'http://bbc.co.uk/2008/mp/mediaselection'}
 mediasets = ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all',
              'apple_icy-mp3a', 'http-icy-aac-lc-a']
 def playlist(pid): return json.load, ('http://www.bbc.co.uk/programmes/%s/playlist.json' % pid)
 def mediaset(ver, mediaset, vpid):
     return json.load, ('http://open.live.bbc.co.uk/mediaselector/%s/select/version/2.0/mediaset/%s/format/json/vpid/%s' % (ver, mediaset, vpid))
 
-def findall(path, et): return et.findall(path, namespaces)
 def pair_with_closer(s): return s, s.close
 def uget((parse, url)): return with_resource(lambda: pair_with_closer(urlopen(url)), parse)
 def vpid(info): return info['defaultAvailableVersion']['pid']
