@@ -14,10 +14,13 @@
    /schedule/entry/pid
 */
 
-on_accept(Query, Goal) :- call_cleanup((Query, Success=true), (Success=true, Goal)).
-play_on_accept(E, Query) :- on_accept(Query, play_entry(_, E)).
-log_failure(G, Desc) :- G -> true; debug(bbc, 'failed: ~p', [Desc]), fail.
-atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
+xbrowse(element(_,As,_), @A, V) :- member(A=V, As).
+xbrowse(element(_,_,Es), Path, Val) :- member(E, Es), xbrowse_sub(E, Path, Val).
+xbrowse_sub(element(Tag,As,Es), Tag:Path, Val) :- xbrowse(element(Tag,As,Es), Path, Val).
+xbrowse_sub(Text, text, Text) :- Text \= element(_,_,_).
+
+xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
+xpath_interval(E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), [start, end], [T1, T2]).
 
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
@@ -27,6 +30,11 @@ uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
    format(string(URL), Pattern, Args),
    get_as(Fmt, URL, Result).
+
+on_accept(Query, Goal) :- call_cleanup((Query, Success=true), (Success=true, Goal)).
+play_on_accept(E, Query) :- on_accept(Query, play_entry(_, E)).
+log_failure(G, Desc) :- G -> true; debug(bbc, 'failed: ~p', [Desc]), fail.
+atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
 
 player(gst123).
 player('gst-play-1.0').
@@ -72,15 +80,10 @@ play_entry(Fmt, E) :-
    format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
    play_url(URL).
 
-play_connection(Conn) :- play_url(Conn.href).
-
 play_url(URL) :-
 	player(Player),
    format(string(C), '~w "~s"', [Player, URL]),
    shell(C).
-
-xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
-xpath_interval(E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), [start, end], [T1, T2]).
 
 prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
 prop(E, pid(X)) :- xpath(E, pid(text), X).
@@ -93,11 +96,6 @@ prop(E, link(F,URL)) :- xpath(E, links/link(@transferformat=F,text), URL).
 prop(E, parent(PID, Type, Name)) :-
    xpath(E, parents/parent, P),
    maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]).
-
-xbrowse(element(_,As,_), @A, V) :- member(A=V, As).
-xbrowse(element(_,_,Es), Path, Val) :- member(E, Es), xbrowse_sub(E, Path, Val).
-xbrowse_sub(element(Tag,As,Es), Tag:Path, Val) :- xbrowse(element(Tag,As,Es), Path, Val).
-xbrowse_sub(Text, text, Text) :- Text \= element(_,_,_).
 
 pl_vpid(PL, PL.defaultAvailableVersion.pid).
 pl_vpid(PL, VPID) :- member(V, PL.allAvailableVersions), VPID = V.pid.
