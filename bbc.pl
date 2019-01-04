@@ -82,6 +82,7 @@ play_entry(Fmt, E) :-
 
 play_url(URL) :-
 	player(Player),
+   absolute_file_name(path(Player), _, [solutions(all), access(read)]),
    format(string(C), '~w "~s"', [Player, URL]),
    shell(C).
 
