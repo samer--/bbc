@@ -99,7 +99,7 @@ prop(E, pid(X)) :- xpath(E, pid(text), X).
 prop(E, title(X)) :- xpath(E, title(text), X).
 prop(E, service(X)) :- xpath(E, service(text), X).
 prop(E, synopsis(X)) :- xpath(E, synopsis(text), X).
-prop(E, duration(X)) :- xpath(E, broadcast(@duration(number)), X).
+prop(E, duration(X)) :- xpath(E, broadcast(@duration), Y), atom_number(Y,X).
 prop(E, availability(X)) :- xpath_interval([start, end], E, availability, X).
 prop(E, link(F,URL)) :- xpath(E, links/link(@transferformat=F,text), URL).
 prop(E, parent(PID, Type, Name)) :-
