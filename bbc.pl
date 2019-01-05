@@ -1,3 +1,5 @@
+:- module(bbc, [save_service_playlist/2, service/1, service/3, service_schedule/2]).
+
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
 :- use_module(library(http/http_open)).
@@ -20,7 +22,7 @@ xbrowse_sub(element(Tag,As,Es), Tag:Path, Val) :- xbrowse(element(Tag,As,Es), Pa
 xbrowse_sub(Text, text, Text) :- Text \= element(_,_,_).
 
 xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
-xpath_interval(E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), [start, end], [T1, T2]).
+xpath_interval(As, E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), As, [T1, T2]).
 
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
@@ -39,12 +41,13 @@ atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
 player(gst123).
 player('gst-play-1.0').
 
-service(bbc_radio_two).
-service(bbc_radio_three).
-service(bbc_radio_fourfm).
-service(bbc_radio_four_extra).
-service(bbc_6music).
-service(bbc_world_service).
+service(S) :- service(S, _, _).
+service(bbc_radio_two,   'R2', 'BBC Radio 2').
+service(bbc_radio_three, 'R3', 'BBC Radio 3').
+service(bbc_radio_fourfm,'R4', 'BBC Radio 4 FM').
+service(bbc_radio_four_extra, 'R4X', 'BBC Radio 4 Extra').
+service(bbc_6music, '6Music', 'BBC 6 Music').
+service(bbc_world_service, 'World', 'BBC World Service').
 
 mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
@@ -56,14 +59,19 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    URLForm = 'http://open.live.bbc.co.uk/mediaselector/6/select/version/2.0/mediaset/~s/format/~s/vpid/~s',
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
-:- volatile_memo service_schedule(+atom, -list(compound)).
-service_schedule(S, Schedule) :- insist(uget(service_availability(S), [Schedule])).
+:- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
+time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [Schedule])).
+
+update_service_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
+service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
 
 :- volatile_memo pid_playlist(+atom, -dict).
 pid_playlist(PID, Playlist) :- uget(playlist(PID), Playlist).
 
 % :- volatile_memo mediaset(+atom, +atom, +atom, -compount).
 mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
+
+schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
 service_entry(S, E) :-
    service_schedule(S, Schedule),
@@ -92,7 +100,7 @@ prop(E, title(X)) :- xpath(E, title(text), X).
 prop(E, service(X)) :- xpath(E, service(text), X).
 prop(E, synopsis(X)) :- xpath(E, synopsis(text), X).
 prop(E, duration(X)) :- xpath(E, broadcast(@duration(number)), X).
-prop(E, availability(X)) :- xpath_interval(E, availability, X).
+prop(E, availability(X)) :- xpath_interval([start, end], E, availability, X).
 prop(E, link(F,URL)) :- xpath(E, links/link(@transferformat=F,text), URL).
 prop(E, parent(PID, Type, Name)) :-
    xpath(E, parents/parent, P),
@@ -148,4 +156,8 @@ user:portray(element(entry, As, Es)) :-
    maplist(xpath(element(entry, As, Es)), [/entry(@pid), title(text)], [PID, Title]),
    format('<~w|~s>', [PID, Title]).
 
+install_periodic_refresh(Period, Dir, Services) :-
+   maplist(update_service_schedule, Services),
+   maplist(save_service_playlist(Dir), Services),
+   alarm(Period, install_periodic_refresh(Period, Dir, Services), [remove(true)]).
 % vim: set filetype=prolog
