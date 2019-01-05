@@ -159,5 +159,5 @@ user:portray(element(entry, As, Es)) :-
 install_periodic_refresh(Period, Dir, Services) :-
    maplist(update_service_schedule, Services),
    maplist(save_service_playlist(Dir), Services),
-   alarm(Period, install_periodic_refresh(Period, Dir, Services), [remove(true)]).
+   alarm(Period, install_periodic_refresh(Period, Dir, Services), _, [remove(true)]).
 % vim: set filetype=prolog
