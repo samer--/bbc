@@ -11,16 +11,7 @@
 :- use_module(library(insist)).
 :- use_module(library(memo)).
 
-/*
-   see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
-   schedule/entry/key
-   /schedule/entry/pid
-*/
-
-xbrowse(element(_,As,_), @A, V) :- member(A=V, As).
-xbrowse(element(_,_,Es), Path, Val) :- member(E, Es), xbrowse_sub(E, Path, Val).
-xbrowse_sub(element(Tag,As,Es), Tag:Path, Val) :- xbrowse(element(Tag,As,Es), Path, Val).
-xbrowse_sub(Text, text, Text) :- Text \= element(_,_,_).
+% see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 
 xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
 xpath_interval(As, E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), As, [T1, T2]).
@@ -68,14 +59,12 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [Schedule])).
 
 service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
+schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
 :- volatile_memo pid_playlist(+atom, -dict).
 pid_playlist(PID, Playlist) :- uget(playlist(PID), Playlist).
 
-% :- volatile_memo mediaset(+atom, +atom, +atom, -compount).
 mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
-
-schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
 entry(E) :- service_entry(_, E).
 service_entry(S, E) :-
@@ -99,6 +88,7 @@ play_url(URL) :-
    format(string(C), '~w "~s"', [Player, URL]),
    shell(C).
 
+prop(E, key(X)) :- xpath(E, key(text), X).
 prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
 prop(E, pid(X)) :- xpath(E, pid(text), X).
 prop(E, title(X)) :- xpath(E, title(text), X).
