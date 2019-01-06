@@ -1,4 +1,5 @@
-:- module(bbc, [save_service_playlist/2, service/1, service/3, service_schedule/2]).
+:- module(bbc, [entry/1, service_entry/2, save_service_playlist/3,  maintain_service_playlist/2,
+                service/1, service/3, service_schedule/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -35,8 +36,12 @@ uget(Head, Result) :-
 
 on_accept(Query, Goal) :- call_cleanup((Query, Success=true), (Success=true, Goal)).
 play_on_accept(E, Query) :- on_accept(Query, play_entry(_, E)).
-log_failure(G, Desc) :- G -> true; debug(bbc, 'failed: ~p', [Desc]), fail.
+log_failure(G) :- G -> true; debug(bbc, 'failed: ~p', [G]), fail.
 atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
+log_and_succeed(G) :-
+   (  catch(G, Ex, debug(bbc, 'Exception on ~q: ~p', [G, Ex])) -> true
+   ;  debug(bbc, 'Failed on ~q', [G])
+   ).
 
 player(gst123).
 player('gst-play-1.0').
@@ -62,7 +67,6 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
 time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [Schedule])).
 
-update_service_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
 service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
 
 :- volatile_memo pid_playlist(+atom, -dict).
@@ -73,6 +77,7 @@ mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
 
 schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
+entry(E) :- service_entry(_, E).
 service_entry(S, E) :-
    service_schedule(S, Schedule),
    xpath(Schedule, /schedule/entry, E).
@@ -101,6 +106,7 @@ prop(E, service(X)) :- xpath(E, service(text), X).
 prop(E, synopsis(X)) :- xpath(E, synopsis(text), X).
 prop(E, duration(X)) :- xpath(E, broadcast(@duration), Y), atom_number(Y,X).
 prop(E, availability(X)) :- xpath_interval([start, end], E, availability, X).
+prop(E, broadcast(X)) :- xpath_interval([start, end], E, broadcast, X).
 prop(E, link(F,URL)) :- xpath(E, links/link(@transferformat=F,text), URL).
 prop(E, parent(PID, Type, Name)) :-
    xpath(E, parents/parent, P),
@@ -111,53 +117,66 @@ pl_vpid(PL, VPID) :- member(V, PL.allAvailableVersions), VPID = V.pid.
 in_interval(ts(A)-ts(B), X) :- A =< X, X =< B.
 
 media_connection(M, C) :- member(C, M.connection).
+connection_expiry(C, Expiry) :- parse_time(C.authExpires, Expiry).
+interval_times(ts(S)-ts(E), S, E).
 
-mediaset_expiry(MS, Expiry) :-
-   member(M, MS.media), media_connection(M, C),
-   parse_time(C.authExpires, Expiry).
-
-entry_media_expiry(MST, E, M, ts(MinExp)) :-
+entry_media(MST, E, M) :-
    prop(E, vpid(VPID)),
    mediaset_type(_, MST),
    catch(mediaset(json, MST, VPID, MS), _, fail),
-   aggregate(min(Exp), mediaset_expiry(MS, Exp), MinExp),
    member(M, MS.media).
 
-service_entry_url(Strategy, Now, Service, E, URL) :-
-   service_entry(Service, E),
-   log_failure(prop(E, availability(Interval)), no_availability(E)),
-   log_failure(in_interval(Interval, Now), not_currently_available(E)),
-   log_failure(entry_url(Strategy, E, URL), no_entry_url(Strategy, E)).
+entry_xurl(redir(Fmt), E, inf-HREF) :- prop(E, link(Fmt, HREF)).
+entry_xurl(best_hls, E, XURL) :-
+   aggregate(max(B, XUs), setof(XU, entry_bitrate_hls_xurl(E, B, XU), XUs), max(_, XURLs)),
+   insist(XURLs = [XURL]).
 
-entry_url(redir(Fmt), E, HREF) :- prop(E, link(Fmt, HREF)).
-entry_url(best_hls, E, URL) :-
-   aggregate(max(B, Us), setof(U, entry_bitrate_hls_url(E, B, U), Us), max(_, URLs)),
-   insist(URLs = [URL]).
-
-entry_bitrate_hls_url(E, BR, HREF) :-
-   entry_media_expiry('iptv-all', E, M, _), number_string(BR, M.bitrate),
+entry_bitrate_hls_xurl(E, BR, Expiry-HREF) :-
+   entry_media('iptv-all', E, M), number_string(BR, M.bitrate),
    media_connection(M, C), C >:< _{transferFormat:"hls", protocol:"http", href:HREF},
-   atom_contains(C.supplier, 'akamai').
+   atom_contains(C.supplier, 'akamai'), connection_expiry(C, Expiry).
 
-write_playlist(EntryURL) :-
-   writeln(user_error, 'Writing playlist...'),
-   writeln('#EXTM3U'),
-   forall(call(EntryURL, E, URL),
-          (prop(E, title(Title)), prop(E, duration(Dur)),
-           format('#EXTINF:~d, ~s\n', [Dur, Title]), writeln(URL))).
+entry_maybe_parent(E, just(PPID)) :- prop(E, parent(PPID, _, _)), !.
+entry_maybe_parent(_, nothing).
 
-save_service_playlist(Dir, Service) :-
-   service(Service), get_time(Now),
+service_entry_pid_parent(Service, E, PID, Parent) :-
+   service_entry(Service, E),
+   entry_maybe_parent(E, Parent),
+   prop(E, pid(PID)).
+
+service_parent_child(Service, MParent, E1) :-
+   setof(E, service_entry_pid_parent(Service, E, _PID, MParent), [E1|_]).
+
+service_parent_children(Service, MParent, Children) :-
+   setof(E, service_parent_child(Service, MParent, E), Children).
+
+save_service_playlist(Dir, Service, Expiry) :-
+   debug(bbc, 'Gathering playlist for ~w...', [Service]),
+   findall(Children, service_parent_children(Service, _, Children), Families),
+   findall(XU-E, (member(Es, Families), member(E, Es), log_failure(entry_xurl(best_hls, E, XU))), Items),
+   aggregate(min(X), E^U^member((X-U)-E, Items), Expiry),
    format(string(FN), '~s/~s.m3u', [Dir, Service]),
-   with_output_to_file(FN, write_playlist(service_entry_url(best_hls, Now, Service))).
+   debug(bbc, 'Saving playlist for ~w to <~s>...', [Service, FN]),
+   with_output_to_file(FN, (writeln('#EXTM3U'), maplist(write_playlist_item, Items))).
+
+write_playlist_item((_-URL)-E) :-
+   maplist(prop(E), [title(Title), duration(Dur), broadcast(B)]),
+   interval_times(B, BStart, _),
+   format_time(string(BDate), '%x', BStart),
+   format('#EXTINF:~d, ~s [~s]\n~w\n', [Dur, Title, BDate, URL]).
 
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
 user:portray(element(entry, As, Es)) :-
    maplist(xpath(element(entry, As, Es)), [/entry(@pid), title(text)], [PID, Title]),
    format('<~w|~s>', [PID, Title]).
 
-install_periodic_refresh(Period, Dir, Services) :-
-   maplist(update_service_schedule, Services),
-   maplist(save_service_playlist(Dir), Services),
-   alarm(Period, install_periodic_refresh(Period, Dir, Services), _, [remove(true)]).
+uninstall_service_playlist_alarm(Dir, Service) :-
+   forall(current_alarm(_, maintain_service_playlist(Dir, Service), Id, _),
+          uninstall_alarm(Id)).
+
+maintain_service_playlist(Dir, Service) :-
+   get_time(Now),
+   log_and_succeed(time_service_schedule(Now, Service, _)),
+   save_service_playlist(Dir, Service, Expiry),
+   alarm_at(Expiry, maintain_service_playlist(Dir, Service), _, [remove(true)]).
 % vim: set filetype=prolog
