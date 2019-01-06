@@ -15,6 +15,8 @@
 
 xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
 xpath_interval(As, E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), As, [T1, T2]).
+in_interval(ts(A)-ts(B), X) :- A =< X, X =< B.
+interval_times(ts(S)-ts(E), S, E).
 
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
@@ -102,13 +104,8 @@ prop(E, parent(PID, Type, Name)) :-
    xpath(E, parents/parent, P),
    maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]).
 
-pl_vpid(PL, PL.defaultAvailableVersion.pid).
-pl_vpid(PL, VPID) :- member(V, PL.allAvailableVersions), VPID = V.pid.
-in_interval(ts(A)-ts(B), X) :- A =< X, X =< B.
-
 media_connection(M, C) :- member(C, M.connection).
 connection_expiry(C, Expiry) :- parse_time(C.authExpires, Expiry).
-interval_times(ts(S)-ts(E), S, E).
 
 entry_media(MST, E, M) :-
    prop(E, vpid(VPID)),
