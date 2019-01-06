@@ -1,5 +1,5 @@
-:- module(bbc, [entry/1, service_entry/2, save_service_playlist/3,  maintain_service_playlist/2,
-                service/1, service/3, service_schedule/2]).
+:- module(bbc, [entry/1, service_entry/2, save_service_playlist/3,  maintain_service/2,
+                service/1, service/3, start_service_maintenance/2, service_schedule/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -157,13 +157,15 @@ user:portray(element(entry, As, Es)) :-
    maplist(xpath(element(entry, As, Es)), [/entry(@pid), title(text)], [PID, Title]),
    format('<~w|~s>', [PID, Title]).
 
-uninstall_service_playlist_alarm(Dir, Service) :-
-   forall(current_alarm(_, maintain_service_playlist(Dir, Service), Id, _),
-          uninstall_alarm(Id)).
+start_service_maintenance(Dir, Service) :-
+   thread_create(maintain_service(Dir, Service), _, []).
 
-maintain_service_playlist(Dir, Service) :-
+maintain_service(Dir, Service) :-
    get_time(Now),
    log_and_succeed(time_service_schedule(Now, Service, _)),
    save_service_playlist(Dir, Service, Expiry),
-   alarm_at(Expiry, maintain_service_playlist(Dir, Service), _, [remove(true)]).
+   sleep_until(Expiry),
+   maintain_service(Dir, Service).
+
+sleep_until(T) :- get_time(T0), DT is T-T0, sleep(DT).
 % vim: set filetype=prolog
