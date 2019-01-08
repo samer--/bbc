@@ -4,139 +4,249 @@
 :- use_module(library(listutils)).
 :- use_module(library(insist)).
 :- use_module(library(xpath)).
+:- use_module(library(dcg/basics), [string_without//2]).
+:- use_module(library(data/pair)).
+:- use_module(library(dcg_core)).
 :- use_module(library(dcg_codes)).
 :- use_module(library(dcg_pair)).
-:- use_module(library(dcg/basics)).
+:- use_module(library(snobol)).
+:- use_module(library(memo)).
 :- use_module(bbc).
 
-maybe(_, nothing) --> [].
-maybe(P, just(X)) --> call(P, X).
-enum(Xs, IXs) :- foldl(enum, Xs, IXs, 0, _).
-enum(X, I-X, I, J) :- J is I + 1.
+mpd_init :- set_state((0-([]-nothing)) - 50).
+start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detached(true), alias(mpd_server)]).
 
-% playlist_state ==  pair(list(song), maybe(play_state)).
-% play_state    ---> ps(song, maybe(song), au_state).
-% au_state      ---> stopped; playing(bool, duration, elapsed, bitrate, format).
-:- dynamic state/1.
+:- initialization(mpd_init, program).
+
+% ------------------------------ State management ------------------------------
+
+% state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
+% play_state ---> ps(song, maybe(song), au_state).
+% au_state   ---> stopped; playing(bool, duration, elapsed, bitrate, format).
+:- dynamic state/1, client/1, queue/2.
+
+:- volatile_memo pid_id(+atom, -integer).
+pid_id(_, Id) :- flag(songid, Id, Id+1).
 
 set_state(S) :- retractall(state(_)), assert(state(S)).
-upd_state(P) :- state(S1), call(P, S1, S2), set_state(S2).
-mpd_init :- set_state(nothing - s{volume: 50, repeat: 0, random: 0, single: 0, consume: 0, playlist: 0, error: nothing}).
-start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [alias(mpd_server)]).
+clear --> \< trans(Q, ([]-nothing)), \> maybe(player_if_queue_playing, Q).
+player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
+player_if_playstate_playing(_) --> [player].
 
-add(S, nothing, just([S]-nothing)).
-add(S, just(Songs1-PS), just(Songs2-PS)) :- append(Songs1, [S], Songs2).
-clear(_, nothing).
-
-%!  mpd_server(+Port, +Options) is det.
-%
-%   Currently defined options are:
-%
-%           * allow(list(ip))
-%           Allow access from addresses in list of terms of type ip, where
-%           =|ip ---> ip(integer, integer, integer, integer)|=.
-%           Default is [ip(127,0,0,1])] (localhost only).
-mpd_server(Port, Options) :-
-   option(allow(Peers), Options, [ip(127,0,0,1)]),
-   setup_call_cleanup(tcp_socket(Socket),
-                      socket_server(Socket, Port, Peers),
-                      tcp_close_socket(Socket)).
-
-socket_server(Socket, Port, Peers) :-
-   tcp_setopt(Socket, reuseaddr),
-   tcp_bind(Socket, Port),
-   tcp_listen(Socket, 5),
-   server_loop(Socket, Peers).
-
-server_loop(Socket, Peers) :-
-   tcp_accept(Socket, Slave, Peer),
-   debug(mpd, "new connection from ~w", [Peer]),
-   tcp_open_socket(Slave, InStream, OutStream),
-   set_stream(InStream, close_on_abort(false)),
-   set_stream(OutStream, close_on_abort(false)),
-   catch(thread_create(service_client(InStream, OutStream, Peer, Peers), _, []),
-         error(permission_error(create, thread, mpdclient), _), fail), !,
-   server_loop(Socket, Peers).
-
-set_telnet_stream(Enc, S) :- maplist(set_stream(S), [encoding(Enc), newline(posix)]).
-service_client(In, Out, Peer, Peers) :-
-   thread_self(Id),
-   call_cleanup(maybe_service_client(In, Out, Peer, Peers),
-                (close(In), close(Out), thread_detach(Id))).
-maybe_service_client(In, Out, Peer, Peers) :-
-   (  member(Peer, Peers)
-   -> set_prolog_IO(In, Out, user_error), prompt(_, ''),
-      current_prolog_flag(encoding, Enc),
-      maplist(set_telnet_stream(Enc), [user_input, user_output]),
-      writeln(user_output, 'OK MPD 0.20.0'),
-      mpd_interactor
-   ;  format(Out, 'Access denied.~n', [])
+deleteid(Id) -->
+   \< trans(Songs1-PS1, Songs2-PS2),
+   {select(song(Id, _, _), Songs1, Songs2)},
+   ( {PS1 = just(ps(_-Id, _, _))} -> {PS2 = nothing}, \> [player]
+   ; {PS2 = PS1}
    ).
+
+addid([ServiceLongName, PID], Id, Q1, Q2) :-
+	service(S,_, ServiceLongName),
+	service_entry(S, E), prop(E, pid(PID)),
+	entry_tags(ServiceLongName, E, PID, Tags),
+	pid_id(PID, Id),
+	ffst(add(song(Id, E, Tags)), Q1, Q2).
+add(S, Songs1, Songs2) :- append(Songs1, [S], Songs2).
+
+pause(X, ps(C, N, playing(P1, Dur, El, BR, Au)), ps(C, N, playing(P2, Dur, El, BR, Au))) :- pausex(X, P1, P2).
+pausex(1, _, pause).
+pausex(0, _, play).
+
+stop(Songs-just(ps(Cur, Nex, _)), Songs-just(ps(Cur, Nex, stopped))).
+next(Q1, Q2) :- Q1 = _-just(ps(_, just(_-Id), _)), playid(Id, Q1, Q2).
+previous(Q1, Q2) :-
+   Q1 = Songs-just(ps(_-Id, _, _)),
+   append(_, [song(Id1, _, _), song(Id, _, _) | _], Songs),
+   playid(Id1, Q1, Q2).
+playid(Id, Songs-_, Songs-just(ps(Pos-Id, NextSong, playing(play, Dur, 0.0, 320, 48000:f:2)))) :-
+   nth0(Pos, Songs, song(Id, E, _)), succ(Pos, Pos1),
+   (nth0(Pos1, Songs, song(Id1, _, _)) -> NextSong=just(Pos1-Id1); NextSong=nothing),
+   prop(E, duration(Dur)).
+
+% ------------------------ client interactor --------------------
+
+% --- core protocol ---
+mpd_interactor :-
+   thread_self(Self),
+   setup_call_cleanup(assert(client(Self)), wait_for_input, retract(client(Self))).
 
 read_command(Cmd) :-
    read_line_to_codes(user_input, Cmd),
-   debug(mpd, ">> ~s", [Cmd]).
+   debug(mpd(command), ">> ~s", [Cmd]).
 
-mpd_interactor :- read_command(Cmd), handle(Cmd).
+wait_for_input :- read_command(Cmd), handle(Cmd).
 handle(end_of_file) :- !.
 handle(`close`) :- !.
-handle(Cmd) :-
+handle(Cmd) :- catch(handle1(Cmd), exec(Cmd2), handle(Cmd2)).
+
+handle1(Cmd) :-
    insist(parse_head(Head, Tail, Cmd, [])),
    insist(catch((execute(Head, Tail), Reply=ok), mpd_ack(Ack), Reply=Ack)),
-   reply(Reply), mpd_interactor.
+   reply(Reply), wait_for_input.
 
 execute(command_list_ok_begin, []) :- !,  command_list(list_ok).
 execute(command_list_begin, []) :- !, command_list(silent).
-execute(idle, []) :- !, insist(read_command(`noidle`)).
-execute(Cmd, T) :- execute(0-'', Cmd, T).
+execute(idle, []) :- !,
+   thread_self(Self),
+   stream_property(Out, alias(user_output)),
+   setup_call_cleanup(thread_create(with_output_to(Out, listener(Self)), Id, []),
+                      read_command(Cmd), cleanup_listener(Cmd, Id, NextAction)),
+   continue_after_idle(NextAction).
+execute(Cmd, T) :- execute1(0-'', Cmd, T).
 
-execute(Ref, Cmd, T) :-
-   catch(command(Cmd, T, Output, []), mpd_err(Err), throw(mpd_ack(ack(Ref, Err)))),
-   debug(mpd, '<< ~s', [Output]), format('~s', [Output]).
+execute1(Ref, Cmd, T) :-
+   (  catch(command(Cmd, T, Output, []), mpd_err(Err), throw(mpd_ack(ack(Ref, Err)))) -> true
+   ;  throw(mpd_ack(ack(Ref, err(99, 'Failed on ~s', [Cmd]))))
+   ),
+   debug(mpd(reply), '<< ~s|', [Output]),
+   format('~s', [Output]).
 
 command_list(Reply) :- accum(Commands, []), execute_list(Reply, Commands, 0).
 execute_list(_, [], _).
 execute_list(Reply, [Cmd|Cmds], Pos) :-
    parse_head(Head, Tail, Cmd, []),
-   execute(Pos-Head, Head, Tail),
+   execute1(Pos-Head, Head, Tail),
    sub_reply(Reply), succ(Pos, Pos1),
    execute_list(Reply, Cmds, Pos1).
 
 sub_reply(silent).
-sub_reply(list_ok) :- writeln('list_OK').
+sub_reply(list_ok) :- fmt_reply('list_OK', []).
 
-reply(ok) :- writeln('OK'), flush_output, debug(mpd, '<< OK', []).
+reply(ok) :- fmt_reply('OK', []).
 reply(ack(Pos-SubCmd, err(Code, Fmt, Args))) :-
-   format(string(Msg), Fmt, Args),
-   format(user_output, 'ACK [~d@~d] {~s} ~s\n', [Code, Pos, SubCmd, Msg]).
+   fmt_reply('ACK [~d@~d] {~s} ~@', [Code, Pos, SubCmd, format(Fmt, Args)]), throw(protocol_fail).
+
+fmt_reply(Fmt, Args) :-
+   format(string(R), Fmt, Args),
+   debug(mpd(command), '<< ~s', [R]),
+   format('~s\n', [R]).
 
 accum --> {read_command(Cmd)}, accum_cont(Cmd).
+accum_cont(`command_list_begin`) --> {throw(protocol_fail)}.
+accum_cont(`command_list_ok_begin`) --> {throw(protocol_fail)}.
 accum_cont(`command_list_end`) --> !, [].
 accum_cont(Cmd) --> [Cmd], accum.
 
+% -- notification system ---
+listener(ClientId) :-
+   debug(mpd(notify), 'Client ~w waiting for change...', [ClientId]),
+   thread_get_message(ClientId, Msg),
+   message_queue_property(ClientId, size(N)), length(Msgs, N),
+   maplist(thread_get_message(ClientId), Msgs),
+   phrase(foldl(report(changed), [Msg|Msgs]), Codes),
+   debug(mpd(command), '<< ~s|', [Codes]),
+   format('~s', [Codes]),
+   reply(ok).
+
+cleanup_listener(Cmd, Id, NextAction) :-
+   kill_listener_if_alive(Cmd, Id, NextAction),
+   thread_join(Id, Status),
+   debug(mpd(notify), 'Listener thread exit status ~w', [Status]).
+
+kill_signal(Id) :- thread_signal(Id, throw(kill)).
+kill_listener_if_alive(`noidle`, Id, nothing) :- !,
+   catch(kill_signal(Id), Ex, debug(mpd(notify), 'WARNING: listener thread unexpectedly gone ~w', [Ex])).
+kill_listener_if_alive(end_of_file, Id, just(end_of_file)) :- !,
+   catch(kill_signal(Id), _, true).
+kill_listener_if_alive(Cmd, Id, just(Cmd)) :-
+   current_thread(Id, Status),
+   (  Status = running
+   -> debug(mpd(notify), 'WARNING: listener thread unexpectedly still running', []),
+      catch(kill_signal(Id), _, true), throw(protocol_fail)
+   ;  true
+   ).
+
+continue_after_idle(nothing).
+continue_after_idle(just(Cmd)) :- throw(exec(Cmd)).
+
+notify_all(Subsystems) :- forall(client(Id), maplist(notify(Id), Subsystems)).
+notify(Id, Subsystem) :-
+   debug(mpd(notify), 'Notifying ~w of changed ~w', [Id, Subsystem]),
+   thread_send_message(Id, Subsystem).
+
+% --- command and reply DCGs -----
 parse_head(Head, Tail) --> string_without(` `, H), tail(Tail), {atom_codes(Head, H)}.
 tail([]) -->[].
 tail(Tail) --> " ", string(Tail).
 
-command(play, [])  --> !.
-command(playid, _) --> !.
-command(pause, []) --> !.
-command(ping, [])  --> !.
-command(lsinfo, _) --> !, {findall(S, service(S), Services)}, foldl(service_dir, Services).
-command(stats, [])   --> !, maplist(report, [artists-0, albums-0, songs-1000]). % uptime, db_playtime, db_update, playtime
-command(outputs, []) --> !, foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status, [])  --> !, reading_state(status).
-command(playlistinfo, []) --> !, reading_state(if_playable(playlistinfo)).
-command(currentsong, [])  --> !, reading_state(if_playable(currentsong)).
-command(Cmd, _) --> {throw(mpd_err(err(5, 'unknown command "~s"', [Cmd])))}.
+maybe_range(all) --> [].
+maybe_range(R) --> quoted(range(R)).
+range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
+
+maybe_quoted_path(Path) --> {Path=[]}; quoted(path(Path)).
+path(Path) --> seqmap_with_sep("/", path_component, Path).
+path([]) --> [].
+path_component(Dir) --> +(notany(`/`)) // atom(Dir).
+
+report(Name-Value) --> report(Name, Value).
+report(Name, Value) --> fmt('~w: ~w\n', [Name, Value]).
+
+% --- command implementations -----
+:- meta_predicate upd_and_notify(//).
+upd_and_notify(P) :-
+   with_mutex(mpd_server, (state(S1), call_dcg(P, S1-Changes, S2-[]), set_state(S2))),
+   sort(Changes, Changed), notify_all(Changed).
 
 reading_state(Action) --> {state(S)}, call(Action, S).
-if_playable(Action, PS-_) --> maybe(Action, PS).
+reading_queue(Action, (_-Q)-_) --> call(Action, Q).
+updating_play_state(Action) :- upd_and_notify((\< ffst(fsnd(Action)), \> [player])).
+updating_queue_state(Action) :-
+   upd_and_notify((fqueue(Action,V,Songs), \> [playlist])),
+   retractall(queue(V, _)), assert(queue(V,Songs)).
+fqueue(P, V1, Songs, ((V1-Q1)-G)-C1, ((V2-Q2)-G)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q1 = Songs-_.
 
-playlistinfo(Songs-_) --> {enum(Songs, NumSongs)}, foldl(report_song_info, NumSongs).
+command(ping, [])  --> [].
+command(setvol, Tail) --> {phrase(quoted(num(V)), Tail), upd_and_notify((\< fsnd(set(V)), \> [mixer]))}.
+command(clear, [])    --> {updating_queue_state(clear)}.
+command(add, Tail)    --> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
+command(addid, Tail)  --> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, Id))}, report('Id'-Id).
+command(deleteid, Tail) --> {phrase(quoted(num(Id)), Tail), updating_queue_state(deleteid(Id))}.
+command(playid, Tail) --> {phrase(quoted(num(Id)), Tail), updating_play_state(playid(Id))}.
+command(stop, [])     --> {updating_play_state(stop)}.
+command(previous, []) --> {updating_play_state(previous)}.
+command(next, [])     --> {updating_play_state(next)}.
+command(pause, Tail)  --> {phrase(quoted(num(X)), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
+command(update, Tail) --> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
+command(lsinfo, Tail) --> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
+command(stats, [])    --> foldl(report, [artists-0, albums-0, songs-0]). % uptime, db_playtime, db_update, playtime
+command(outputs, [])  --> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
+command(status, [])  --> reading_state(report_status).
+command(playlistinfo, Tail) --> {phrase(maybe_range(R), Tail)}, reading_state(reading_queue(playlistinfo(R))).
+command(plchanges, Tail) --> {phrase(quoted(num(V)), Tail)}, reading_state(reading_queue(plchanges(V))).
+command(currentsong, [])  --> reading_state(reading_queue(currentsong)).
+
+update(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
+update_and_notify(Path) :- update(Path), debug(mpd(update), 'Successful update', []), notify_all([database]).
+
+update([]) :- forall(service(S), update_service(S)).
+update([ServiceLongName]) :- service(S, _, ServiceLongName), update_service(S).
+update_service(S) :- get_time(Now), bbc:log_and_succeed(time_service_schedule(Now, S, _)).
+
+lsinfo([]) -->
+   {findall(S, service(S), Services)},
+   foldl(service_dir, Services).
+lsinfo([ServiceLongName]) -->
+	{ service(S, _, ServiceLongName),
+	  (service_schedule(S, _) -> true; get_time(Now), bbc:time_service_schedule(Now, S, _)),
+     findall(Children, bbc:service_parent_children(S, _, Children), Families),
+     findall(E, (member(Es, Families), member(E, Es)), Items)
+	},
+	foldl(programme(ServiceLongName), Items).
+
+playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
+subrange(N:M, L, Sel) :- length(Pre, N), length(PreSel, M), append(PreSel, _, L), append(Pre, Sel, PreSel).
+subrange(all, L, L).
+
+plchanges(V, Songs-_) --> {queue(V, OldSongs), enum(Songs, NSongs)}, report_changes(OldSongs, NSongs).
+report_changes(_, []) --> !.
+report_changes([], NSongs) --> foldl(report_song_info, NSongs).
+report_changes([Old|Olds], [N-New|News]) -->
+   ({Old=New} -> []; report_song_info(N-New)),
+   report_changes(Olds, News).
+
 currentsong(Songs-PS) --> maybe(currentsong(Songs), PS).
 currentsong(Songs, ps(Pos-_, _, _)) --> {nth0(Pos, Songs, Song)}, report_song_info(Pos-Song).
-report_song_info(Pos-s(Id, Tags)) --> foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
+report_song_info(Pos-song(Id, _, Tags)) --> foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
 
 service_dir(S) -->
    {service(S, _, Name)}, report(directory-Name),
@@ -146,24 +256,99 @@ service_dir(S) -->
    ;  []
    ).
 
-status(PL-GS) -->
-   foldl(report_key(GS), [volume, repeat, random, single, consume, playlist]),
-   report_playlist_state(PL).
+programme(ServiceLongName, E) -->
+	{ entry_tags(ServiceLongName, E, PID, Tags), pid_id(PID, Id) },
+	foldl(report, Tags), report('Id'-Id).
 
-report_playlist_state(nothing) --> foldl(report, [playlistlength-0, state-stop]).
-report_playlist_state(just(Songs-PS)) -->
+entry_tags(ServiceLongName, E, PID, [file-File, 'Name'-Title, 'Comment'-Syn, duration-Dur]) :-
+	maplist(prop(E), [pid(PID), title(Title), synopsis(Syn), duration(Dur)]),
+   format(string(File),'~w/~w', [ServiceLongName, PID]).
+
+report_status((Ver-(Songs-PS))-Vol) -->
    {length(Songs, Len)},
-   report(playlistlength-Len),
+   foldl(report, [volume-Vol, repeat-0, random-0, single-0, consume-0, playlist-Ver, playlistlength-Len]),
    report_play_state(PS).
+
 report_play_state(nothing) --> report(state-stop).
 report_play_state(just(ps(Current, Next, Audio))) -->
    report_song(song, songid, Current),
    maybe(report_song(nextsong, nextsongid), Next),
    report_audio_state(Audio).
+
 report_song(K1, K2, Pos-Id) --> foldl(report, [K1-Pos, K2-Id]).
 report_audio_state(stopped) --> report(state-stop).
 report_audio_state(playing(State, Dur, Elap, BR, Fmt)) -->
    foldl(report, [state-State, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
 
-report_key(S, Key) --> report(Key - S.Key).
-report(Name-Value) --> fmt('~w: ~w\n', [Name, Value]).
+% ------------------------------ Server framework ------------------------------
+
+%!  mpd_server(+Port, +Options) is det.
+%
+%   Currently defined options are:
+%
+%           * allow(pred(ip))
+%           Allow access from addresses that satisfy unary predicate over ip, where
+%           =|ip ---> ip(integer, integer, integer, integer)|=.
+%           Default is =|=(ip(127,0,0,1]))|= (i.e. localhost only).
+mpd_server(Port, Options) :-
+   option(allow(Allow), Options, =(ip(127,0,0,1))),
+   setup_call_cleanup(tcp_socket(Socket),
+                      socket_server(Socket, Port, Allow),
+                      tcp_close_socket(Socket)).
+
+socket_server(Socket, Port, Allow) :-
+   tcp_setopt(Socket, reuseaddr),
+   tcp_bind(Socket, Port),
+   tcp_listen(Socket, 5),
+   server_loop(Socket, Allow).
+
+server_loop(Socket, Allow) :-
+   tcp_accept(Socket, Slave, Peer),
+   debug(mpd(connection), "new connection from ~w", [Peer]),
+   tcp_open_socket(Slave, In, Out),
+   set_stream(In, close_on_abort(false)),
+   set_stream(Out, close_on_abort(false)),
+   catch(spawn(call_cleanup(client_thread(In, Out, Peer, Allow), (close(In), close(Out)))),
+         error(permission_error(create, thread, mpdclient), _), fail), !,
+   server_loop(Socket, Allow).
+
+client_thread(In, Out, Peer, Allow) :- call(Allow, Peer), !, service_client(In, Out).
+client_thread(_, Out, _, _) :- format(Out, 'Access denied.~n', []).
+
+set_telnet_stream(Enc, S) :- maplist(set_stream(S), [encoding(Enc), newline(posix)]).
+service_client(In, Out) :-
+   set_prolog_IO(In, Out, user_error), prompt(_, ''),
+   current_prolog_flag(encoding, Enc),
+   maplist(set_telnet_stream(Enc), [user_input, user_output]),
+   writeln('OK MPD 0.20.0'),
+   mpd_interactor.
+
+% -------------- DCG and other tools --------------------
+
+not_empty([_|_]).
+enum(Xs, IXs) :- foldl(enum, Xs, IXs, 0, _).
+enum(X, I-X, I, J) :- J is I + 1.
+spawn(G) :- thread_create(G, _, [detached(true)]).
+fjust(P, just(X1), just(X2)) :- call(P, X1, X2).
+pphrase(P) :- phrase(P, C), format('~s', [C]).
+
++(P) --> call_dcg(P), *(P).
+*(P) --> []; +(P).
+
+maybe(_, nothing) --> [].
+maybe(P, just(Y)) --> call(P,Y).
+
+digit  --> ctype(digit).
+nat(N) --> {ground(N)}, !, num(N) // nat_digits.
+nat(N) --> nat_digits // num(N).
+nat_digits --> +digit.
+
+num(N,S1,S2) :- ground(N), !, format(codes(S1,S2),'~w',[N]).
+num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
+atom(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~w',[A]).
+atom(A,S1,S2) :- list(C,S1,S2), atom_codes(A,C).
+
+quoted(P) --> "\"", esc(esc_qq, Codes), "\"", {phrase(P, Codes)}.
+esc_qq([0'"|Cs],Cs) --> "\\\"".
+esc_qq([0'\\|Cs],Cs) --> "\\\\".
+esc_qq([C|Cs],Cs) --> [C] // notany(`\\"`).
