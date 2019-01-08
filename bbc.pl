@@ -1,4 +1,4 @@
-:- module(bbc, [entry/1, service_entry/2, save_service_playlist/3,  maintain_service/2,
+:- module(bbc, [entry/1, service_entry/2, save_service_playlist/3,  maintain_service/2, prop/2,
                 service/1, service/3, start_service_maintenance/2, service_schedule/2]).
 
 :- use_module(library(sgml)).
@@ -123,7 +123,7 @@ entry_bitrate_hls_xurl(E, BR, Expiry-HREF) :-
    media_connection(M, C), C >:< _{transferFormat:"hls", protocol:"http", href:HREF},
    atom_contains(C.supplier, 'akamai'), connection_expiry(C, Expiry).
 
-entry_maybe_parent(E, just(PPID)) :- prop(E, parent(PPID, _, _)), !.
+entry_maybe_parent(E, just(PPID-Name)) :- prop(E, parent(PPID, _, Name)), !.
 entry_maybe_parent(_, nothing).
 
 service_entry_pid_parent(Service, E, PID, Parent) :-
@@ -154,11 +154,11 @@ write_playlist_item((_-URL)-E) :-
 
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
 user:portray(element(entry, As, Es)) :-
-   maplist(xpath(element(entry, As, Es)), [/entry(@pid), title(text)], [PID, Title]),
+   maplist(xpath(element(entry, As, Es)), [pid(text), title(text)], [PID, Title]),
    format('<~w|~s>', [PID, Title]).
 
 start_service_maintenance(Dir, Service) :-
-   thread_create(maintain_service(Dir, Service), _, []).
+   thread_create(maintain_service(Dir, Service), _, [detached(true)]).
 
 maintain_service(Dir, Service) :-
    get_time(Now),
