@@ -3,7 +3,7 @@
 
 :- use_module(bbc_db).
 :- use_module(library(fileutils)).
-:- use_module(tools, [log_failure/1, log_and_succeed/1]).
+:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1]).
 
 save_service_playlist(Dir, Service, Expiry) :-
    debug(bbc, 'Gathering playlist for ~w...', [Service]),
