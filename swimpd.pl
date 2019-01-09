@@ -40,6 +40,9 @@ start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detache
 run(Port,Opts) :- maplist(debug, [mpd(connection), mpd(command)]), start_mpd(Port, Opts).
 % ------------------------------ State management ------------------------------
 
+longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
+update_service(S) :- get_time(Now), bbc:log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
+
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
 % play_state ---> ps(natural, au_state).
 % au_state   ---> stopped; playing(bool, duration, elapsed, bitrate, format).
@@ -49,7 +52,7 @@ set_state(Key, Val) :- retractall(state(Key, _)), assert(state(Key, Val)).
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
 
-clear --> \< trans(Q, ([]-nothing)), \> maybe(player_if_queue_playing, Q).
+clear --> \< trans(Q, ([]-nothing)), \> player_if_queue_playing(Q).
 player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
 player_if_playstate_playing(_) --> [player].
 
@@ -61,11 +64,11 @@ deleteid(Id) -->
    ).
 
 addid([ServiceLongName], nothing) -->
-   {service(S,_, ServiceLongName), findall(E, service_entry(S, E), Entries)},
+   {longname_service(ServiceLongName, S), findall(E, service_entry(S, E), Entries)},
    ffst(foldl(add(ServiceLongName), _Ids, Entries)).
 
 addid([ServiceLongName, PID], just(Id)) -->
-   {service(S,_, ServiceLongName), service_entry(S, E), prop(E, pid(PID))},
+   {longname_service(ServiceLongName, S), service_entry(S, E), prop(E, pid(PID))},
    ffst(add(ServiceLongName, Id, E)).
 
 add(ServiceLongName, Id, E) --> {entry_tags(ServiceLongName, E, Id, Tags)}, add(song(Id, E, Tags)).
@@ -202,7 +205,6 @@ cleanup_listener(Cmd, Self, Id, NextCommand) :-
    debug(mpd(notify), 'Listener exited with ~w', [Status]),
    insist(Status = exception(cmd(NextCommand))).
 
-user:portray(cmd(Codes)) :- format('`~s`',[Codes]).
 notify_all(Subsystems) :- forall(client(Id), maplist(notify(Id), Subsystems)).
 notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
 
@@ -270,14 +272,12 @@ update_and_notify(Path) :- update(Path), notify_all([database]).
 
 update([]) :- forall(service(S), update_service(S)).
 update([ServiceLongName]) :- service(S, _, ServiceLongName), update_service(S).
-update_service(S) :- get_time(Now), bbc:log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
 
 lsinfo([]) -->
    {findall(S, service(S), Services)},
    foldl(service_dir, Services).
 lsinfo([ServiceLongName]) -->
-	{ service(S, _, ServiceLongName),
-	  (service_schedule(S, _) -> true; update_service(S)),
+	{ longname_service(ServiceLongName, S),
      findall(Children, bbc:service_parent_children(S, _, Children), Families),
      findall(E, (member(Es, Families), member(E, Es)), Items)
 	},
