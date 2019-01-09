@@ -15,7 +15,6 @@
 
 /* <module> MPD server for BBC radio programmes.
 
-   @todo idle with subsystem parameters
    @todo rethink top level control flow
    @todo actually play something
  */
