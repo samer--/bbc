@@ -11,7 +11,7 @@
 :- use_module(library(dcg_pair)).
 :- use_module(library(snobol)).
 :- use_module(library(memo)).
-:- use_module(tools, [in/2, enum/2, log_and_succeed/1]).
+:- use_module(bbc_tools, [in/2, enum/2, log_and_succeed/1]).
 :- use_module(bbc_db).
 
 /* <module> MPD server for BBC radio programmes.

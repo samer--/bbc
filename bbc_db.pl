@@ -11,7 +11,7 @@
 :- use_module(library(fileutils)).
 :- use_module(library(insist)).
 :- use_module(library(memo)).
-:- use_module(tools, [log_failure/1, log_and_succeed/1, on_accept/2]).
+:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, on_accept/2]).
 
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 
