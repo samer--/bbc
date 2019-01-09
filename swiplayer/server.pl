@@ -1,4 +1,4 @@
-:- module(mpd_server, [ run/2, start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
+:- module(swimpd, [ run/2, start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
 
 :- use_module(library(socket)).
 :- use_module(library(listutils)).
@@ -17,11 +17,20 @@
 
    @todo rethink top level control flow
    @todo actually play something
+   @todo add [file or directory]
+   @todo check behaviour of play when no current song
+   @todo check if add can change play state
+   @todo randomised play sequence
+   @todo pause toggle
+   @todo unify command arg parsing
  */
 
 %! mpd_init is det.
 %  Set state of MPD to an empty queue with version 0 and volume set to 50%.
-mpd_init :- set_state((1-([]-nothing)) - 50), assert(queue(1, [])).
+mpd_init :-
+   get_time(Now),
+   maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 1-([]-nothing)]),
+   retractall(queue(_,_)), assert(queue(1, [])).
 
 %! start_mpd(Port, Options) is det.
 %  Start server as a detached thread with alias =|mpd_server|=.
@@ -36,12 +45,12 @@ run(Port,Opts) :- debug(mpd(_)), start_mpd(Port, Opts).
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
 % play_state ---> ps(natural, au_state).
 % au_state   ---> stopped; playing(bool, duration, elapsed, bitrate, format).
-:- dynamic state/1, client/1, queue/2.
+:- dynamic state/2, client/1, queue/2.
+set_state(Key, Val) :- retractall(state(Key, _)), assert(state(Key, Val)).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
 
-set_state(S) :- retractall(state(_)), assert(state(S)).
 clear --> \< trans(Q, ([]-nothing)), \> maybe(player_if_queue_playing, Q).
 player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
 player_if_playstate_playing(_) --> [player].
@@ -190,6 +199,7 @@ cleanup_listener(Cmd, Self, Id, NextCommand) :-
    debug(mpd(notify), 'Listener exited with ~w', [Status]),
    insist(Status = exception(cmd(NextCommand))).
 
+user:portray(cmd(Codes)) :- format('`~s`',[Codes]).
 notify_all(Subsystems) :- forall(client(Id), maplist(notify(Id), Subsystems)).
 notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
 
@@ -214,18 +224,18 @@ report(Name-Value) --> report(Name, Value).
 report(Name, Value) --> fmt('~w: ~w\n', [Name, Value]).
 
 % --- command implementations -----
-:- meta_predicate upd_and_notify(//).
-upd_and_notify(P) :-
-   with_mutex(mpd_server, (state(S1), call_dcg(P, S1-Changes, S2-[]), set_state(S2))),
+:- meta_predicate upd_and_notify(+, //).
+upd_and_notify(K, P) :-
+   with_mutex(swimpd, (state(K, S1), call_dcg(P, S1-Changes, S2-[]), set_state(K, S2))),
    sort(Changes, Changed), notify_all(Changed).
 
-reading_state(Action) --> {state(S)}, call(Action, S).
-reading_queue(Action, (_-Q)-_) --> call(Action, Q).
-updating_play_state(Action) :- upd_and_notify((\< ffst(fsnd(Action)), \> [player])).
+reading_state(K, Action) --> {state(K, S)}, call(Action, S).
+reading_queue(Action, _-Q) --> call(Action, Q).
+updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
 updating_queue_state(Action) :-
-   upd_and_notify((fqueue(Action,V,Songs), \> [playlist])),
-   retractall(queue(V, _)), assert(queue(V,Songs)).
-fqueue(P, V2, Songs, ((V1-Q1)-G)-C1, ((V2-Q2)-G)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
+   upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])),
+   assert(queue(V,Songs)).
+fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
 
 :- op(1200, xfx, :->).
 :- discontiguous command/1, command/4.
@@ -233,7 +243,7 @@ term_expansion(command(H,T) :-> Body, [(command(H,T) --> Body), command(H)]).
 
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(ping, [])     :-> [].
-command(setvol, Tail) :-> {phrase(quoted(num(V)), Tail), upd_and_notify((\< fsnd(set(V)), \> [mixer]))}.
+command(setvol, Tail) :-> {phrase(quoted(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
 command(add, Tail)    :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
 command(addid, Tail)  :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, Id))}, report('Id'-Id).
@@ -246,27 +256,27 @@ command(next, [])     :-> {updating_play_state(next)}.
 command(pause, Tail)  :-> {phrase(quoted(num(X)), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(stats, [])    :-> foldl(report, [artists-0, albums-0, songs-0]). % uptime, db_playtime, db_update, playtime
+command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-0, albums-0, songs-0, uptime-T, db_update-D]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status, [])  :-> reading_state(report_status).
-command(playlistinfo, Tail) :-> {phrase(maybe_range(R), Tail)}, reading_state(reading_queue(playlistinfo(R))).
-command(playlistid, []) :-> reading_state(reading_queue(playlistinfo(all))).
-command(plchanges, Tail) :-> {phrase(quoted(num(V)), Tail)}, reading_state(reading_queue(plchanges(V))).
-command(currentsong, []) :-> reading_state(reading_queue(currentsong)).
+command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
+command(playlistinfo, Tail) :-> {phrase(maybe_range(R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
+command(playlistid, []) :-> reading_state(queue, reading_queue(playlistinfo(all))).
+command(plchanges, Tail) :-> {phrase(quoted(num(V)), Tail)}, reading_state(queue, reading_queue(plchanges(V))).
+command(currentsong, []) :-> reading_state(queue, reading_queue(currentsong)).
 
 update(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
-update_and_notify(Path) :- update(Path), debug(mpd(update), 'Successful update', []), notify_all([database]).
+update_and_notify(Path) :- update(Path), notify_all([database]).
 
 update([]) :- forall(service(S), update_service(S)).
 update([ServiceLongName]) :- service(S, _, ServiceLongName), update_service(S).
-update_service(S) :- get_time(Now), bbc:log_and_succeed(time_service_schedule(Now, S, _)).
+update_service(S) :- get_time(Now), bbc:log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
 
 lsinfo([]) -->
    {findall(S, service(S), Services)},
    foldl(service_dir, Services).
 lsinfo([ServiceLongName]) -->
 	{ service(S, _, ServiceLongName),
-	  (service_schedule(S, _) -> true; get_time(Now), bbc:time_service_schedule(Now, S, _)),
+	  (service_schedule(S, _) -> true; update_service(S)),
      findall(Children, bbc:service_parent_children(S, _, Children), Families),
      findall(E, (member(Es, Families), member(E, Es)), Items)
 	},
@@ -303,9 +313,9 @@ entry_tags(ServiceLongName, E, PID, [file-File, 'Title'-Title, 'Comment'-Syn, du
 	maplist(prop(E), [pid(PID), title(Title), synopsis(Syn), duration(Dur)]),
    format(string(File),'~w/~w', [ServiceLongName, PID]).
 
-report_status((Ver-(Songs-PS))-Vol) -->
+report_status((Ver-(Songs-PS))) -->
    {length(Songs, Len)},
-   foldl(report, [volume-Vol, repeat-0, random-0, single-0, consume-0, playlist-Ver, playlistlength-Len]),
+   foldl(report, [repeat-0, random-0, single-0, consume-0, playlist-Ver, playlistlength-Len]),
    report_play_state(PS, Songs).
 
 report_play_state(nothing, _) --> report(state-stop).
@@ -321,6 +331,7 @@ report_audio_state(stopped) --> report(state-stop).
 report_audio_state(playing(State, Dur, Elap, BR, Fmt)) -->
    foldl(report, [state-State, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
 
+uptime(T) :- get_time(Now), state(start_time, Then), T is Now - Then.
 % ------------------------------ Server framework ------------------------------
 
 %!  mpd_server(+Port, +Options) is det.
