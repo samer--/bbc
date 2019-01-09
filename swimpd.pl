@@ -1,4 +1,4 @@
-:- module(swimpd, [ run/2, start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
+:- module(swimpd, [ start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
 
 :- use_module(library(socket)).
 :- use_module(library(listutils)).
@@ -35,9 +35,8 @@ mpd_init :-
 %  See mpd_server/2 for description of parameters.
 start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detached(true), alias(mpd_server)]).
 
-:- initialization(mpd_init, program).
+:- initialization((debug(mpd(_)), mpd_init), program).
 
-run(Port,Opts) :- maplist(debug, [mpd(connection), mpd(command)]), start_mpd(Port, Opts).
 % ------------------------------ State management ------------------------------
 
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
@@ -91,8 +90,7 @@ play(Pos, Id, Songs-_, Songs-just(ps(Pos, playing(play, Dur, 0.0, 320, 48000:f:2
 
 % ------------------------ client interactor --------------------
 
-% --- core protocol ---
-% ! mpd_interactor is det.
+%! mpd_interactor is det.
 % Run MPD client interaction using the current user_input and user_output Prolog streams.
 mpd_interactor :-
    thread_self(Self),
@@ -220,7 +218,7 @@ path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
 path_component(Dir) --> +(notany(`/`)) // atom(Dir).
 
-idle_filter(true1) --> [].
+idle_filter(nonvar) --> [].
 idle_filter(in(Subsystems)) --> seqmap_with_sep(" ", quoted(atom), Subsystems).
 
 report(Name-Value) --> report(Name, Value).
@@ -378,7 +376,6 @@ service_client(In, Out) :-
 
 % -------------- DCG and other tools --------------------
 
-true1(_).
 in(List, Item) :- member(Item, List).
 enum(Xs, IXs) :- foldl(enum, Xs, IXs, 0, _).
 enum(X, I-X, I, J) :- J is I + 1.
