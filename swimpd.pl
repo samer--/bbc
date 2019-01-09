@@ -15,14 +15,12 @@
 
 /* <module> MPD server for BBC radio programmes.
 
-   @todo rethink top level control flow
    @todo actually play something
-   @todo add [file or directory]
    @todo check behaviour of play when no current song
    @todo check if add can change play state
-   @todo randomised play sequence
-   @todo pause toggle
+   @todo rethink top level control flow
    @todo unify command arg parsing
+   @todo randomised play sequence
  */
 
 %! mpd_init is det.
@@ -62,17 +60,22 @@ deleteid(Id) -->
    ; {PS2 = PS1}
    ).
 
-addid([ServiceLongName, PID], Id, Q1, Q2) :-
-	service(S,_, ServiceLongName),
-	service_entry(S, E), prop(E, pid(PID)),
-	entry_tags(ServiceLongName, E, PID, Tags),
-	pid_id(PID, Id),
-	ffst(add(song(Id, E, Tags)), Q1, Q2).
+addid([ServiceLongName], nothing) -->
+   {service(S,_, ServiceLongName), findall(E, service_entry(S, E), Entries)},
+   ffst(foldl(add(ServiceLongName), _Ids, Entries)).
+
+addid([ServiceLongName, PID], just(Id)) -->
+   {service(S,_, ServiceLongName), service_entry(S, E), prop(E, pid(PID))},
+   ffst(add(ServiceLongName, Id, E)).
+
+add(ServiceLongName, Id, E) --> {entry_tags(ServiceLongName, E, Id, Tags)}, add(song(Id, E, Tags)).
 add(S, Songs1, Songs2) :- append(Songs1, [S], Songs2).
 
 pause(X, ps(C, playing(P1, Dur, El, BR, Au)), ps(C, playing(P2, Dur, El, BR, Au))) :- pausex(X, P1, P2).
-pausex(1, _, pause).
-pausex(0, _, play).
+pausex(just(1), _, pause).
+pausex(just(0), _, play).
+pausex(nothing, pause, play).
+pausex(nothing, play, pause).
 
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, stopped))).
 next     --> get(_-just(ps(Pos, _))), {succ(Pos, NextPos)}, play(NextPos, _).
@@ -208,8 +211,6 @@ parse_head(Head, Tail) --> string_without(` `, H), tail(Tail), {atom_codes(Head,
 tail([]) --> [].
 tail(Tail) --> " ", string(Tail).
 
-maybe_range(all) --> [].
-maybe_range(R) --> quoted(range(R)).
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
 
 maybe_quoted_path(Path) --> {Path=[]}; quoted(path(Path)).
@@ -246,21 +247,21 @@ command(ping, [])     :-> [].
 command(setvol, Tail) :-> {phrase(quoted(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
 command(add, Tail)    :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
-command(addid, Tail)  :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, Id))}, report('Id'-Id).
+command(addid, Tail)  :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, just(Id)))}, report('Id'-Id).
 command(deleteid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_queue_state(deleteid(Id))}.
 command(playid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_play_state(play(_, Id))}.
 command(play, [])     :-> {updating_play_state(play)}.
 command(stop, [])     :-> {updating_play_state(stop)}.
 command(previous, []) :-> {updating_play_state(previous)}.
 command(next, [])     :-> {updating_play_state(next)}.
-command(pause, Tail)  :-> {phrase(quoted(num(X)), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
+command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
 command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-0, albums-0, songs-0, uptime-T, db_update-D]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
-command(playlistinfo, Tail) :-> {phrase(maybe_range(R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
-command(playlistid, []) :-> reading_state(queue, reading_queue(playlistinfo(all))).
+command(playlistinfo, Tail) :-> {phrase(maybe(quoted(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
+command(playlistid, [])  :-> reading_state(queue, reading_queue(playlistinfo(nothing))).
 command(plchanges, Tail) :-> {phrase(quoted(num(V)), Tail)}, reading_state(queue, reading_queue(plchanges(V))).
 command(currentsong, []) :-> reading_state(queue, reading_queue(currentsong)).
 
@@ -283,8 +284,8 @@ lsinfo([ServiceLongName]) -->
 	foldl(programme(ServiceLongName), Items).
 
 playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
-subrange(N:M, L, Sel) :- length(Pre, N), length(PreSel, M), append(PreSel, _, L), append(Pre, Sel, PreSel).
-subrange(all, L, L).
+subrange(just(N:M), L, Sel) :- length(Pre, N), length(PreSel, M), append(PreSel, _, L), append(Pre, Sel, PreSel).
+subrange(nothing, L, L).
 
 plchanges(V, Songs-_) --> {queue(V, OldSongs), enum(Songs, NSongs)}, report_changes(OldSongs, NSongs).
 report_changes(_, []) --> !.
@@ -306,12 +307,12 @@ service_dir(S) -->
    ).
 
 programme(ServiceLongName, E) -->
-	{ entry_tags(ServiceLongName, E, PID, Tags), pid_id(PID, Id) },
+	{ entry_tags(ServiceLongName, E, Id, Tags)},
 	foldl(report, Tags), report('Id'-Id).
 
-entry_tags(ServiceLongName, E, PID, [file-File, 'Title'-Title, 'Comment'-Syn, duration-Dur]) :-
+entry_tags(ServiceLongName, E, Id, [file-File, 'Title'-Title, 'Comment'-Syn, duration-Dur]) :-
 	maplist(prop(E), [pid(PID), title(Title), synopsis(Syn), duration(Dur)]),
-   format(string(File),'~w/~w', [ServiceLongName, PID]).
+   pid_id(PID, Id), format(string(File),'~w/~w', [ServiceLongName, PID]).
 
 report_status((Ver-(Songs-PS))) -->
    {length(Songs, Len)},
