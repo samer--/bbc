@@ -1,4 +1,4 @@
-:- module(swimpd, [ start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
+:- module(swimpd, [ in/2, start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
 
 :- use_module(library(socket)).
 :- use_module(library(listutils)).
@@ -11,7 +11,8 @@
 :- use_module(library(dcg_pair)).
 :- use_module(library(snobol)).
 :- use_module(library(memo)).
-:- use_module(bbc).
+:- use_module(tools, [in/2, enum/2, log_and_succeed/1]).
+:- use_module(bbc_db).
 
 /* <module> MPD server for BBC radio programmes.
 
@@ -24,11 +25,12 @@
  */
 
 %! mpd_init is det.
-%  Set state of MPD to an empty queue with version 0 and volume set to 50%.
+%  Set state of MPD to an empty queue with version 0, volume set to 50%, and start
+%  and db update times to now.
 mpd_init :-
    get_time(Now),
-   maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 1-([]-nothing)]),
-   retractall(queue(_,_)), assert(queue(1, [])).
+   maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 0-([]-nothing)]),
+   retractall(queue(_,_)), assert(queue(0, [])).
 
 %! start_mpd(Port, Options) is det.
 %  Start server as a detached thread with alias =|mpd_server|=.
@@ -40,7 +42,7 @@ start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detache
 % ------------------------------ State management ------------------------------
 
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
-update_service(S) :- get_time(Now), bbc:log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
+update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
 
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
 % play_state ---> ps(natural, au_state).
@@ -257,7 +259,9 @@ command(next, [])     :-> {updating_play_state(next)}.
 command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-0, albums-0, songs-0, uptime-T, db_update-D]).
+command(list, _)      :-> "Music\nSpoken\nNews\n".
+command(listplaylists, _) :-> [].
+command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-1, albums-10, songs-90, uptime-T, db_update-D]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(playlistinfo, Tail) :-> {phrase(maybe(quoted(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
@@ -276,7 +280,7 @@ lsinfo([]) -->
    foldl(service_dir, Services).
 lsinfo([ServiceLongName]) -->
 	{ longname_service(ServiceLongName, S),
-     findall(Children, bbc:service_parent_children(S, _, Children), Families),
+     findall(Children, service_parent_children(S, _, Children), Families),
      findall(E, (member(Es, Families), member(E, Es)), Items)
 	},
 	foldl(programme(ServiceLongName), Items).
@@ -310,7 +314,10 @@ programme(ServiceLongName, E) -->
 
 entry_tags(ServiceLongName, E, Id, [file-File, 'Title'-Title, 'Comment'-Syn, duration-Dur]) :-
 	maplist(prop(E), [pid(PID), title(Title), synopsis(Syn), duration(Dur)]),
+   % entry_maybe_parent(E, Parent), parent_album(Parent, Album),
    pid_id(PID, Id), format(string(File),'~w/~w', [ServiceLongName, PID]).
+parent_album(nothing, "<Singleton>").
+parent_album(just(_-Name), Name).
 
 report_status((Ver-(Songs-PS))) -->
    {length(Songs, Len)},
@@ -376,9 +383,6 @@ service_client(In, Out) :-
 
 % -------------- DCG and other tools --------------------
 
-in(List, Item) :- member(Item, List).
-enum(Xs, IXs) :- foldl(enum, Xs, IXs, 0, _).
-enum(X, I-X, I, J) :- J is I + 1.
 spawn(G) :- thread_create(G, _, [detached(true)]).
 fjust(P, just(X1), just(X2)) :- call(P, X1, X2).
 pphrase(P) :- phrase(P, C), format('~s', [C]).
