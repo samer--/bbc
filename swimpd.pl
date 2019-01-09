@@ -39,7 +39,7 @@ start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detache
 
 :- initialization(mpd_init, program).
 
-run(Port,Opts) :- debug(mpd(_)), start_mpd(Port, Opts).
+run(Port,Opts) :- maplist(debug, [mpd(connection), mpd(command)]), start_mpd(Port, Opts).
 % ------------------------------ State management ------------------------------
 
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
