@@ -1,4 +1,4 @@
-#! /usr/bin/env swipl -g main
+#! /usr/bin/env swipl
 :- module(bbc_playlists, [main/1, maintain_service/2, start_service_maintenance/2]).
 
 :- use_module(bbc_db).
@@ -32,4 +32,5 @@ maintain_service(Dir, Service) :-
 
 sleep_until(T) :- get_time(T0), DT is T-T0, sleep(DT).
 main([Dir|Services]) :- debug(bbc), maplist(start_service_maintenance(Dir), Services).
+:- current_prolog_flag(argv, Args), main(Args).
 % vim: set filetype=prolog
