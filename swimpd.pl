@@ -37,7 +37,7 @@ mpd_init :-
 %  See mpd_server/2 for description of parameters.
 start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detached(true), alias(mpd_server)]).
 
-:- initialization((debug(mpd(_)), mpd_init), program).
+% :- initialization((debug(mpd(_)), mpd_init), program).
 
 % ------------------------------ State management ------------------------------
 
@@ -242,7 +242,7 @@ fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, 
 
 :- op(1200, xfx, :->).
 :- discontiguous command/1, command/4.
-term_expansion(command(H,T) :-> Body, [(command(H,T) --> Body), command(H)]).
+term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(command(H,T) --> Body, Rule).
 
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(ping, [])     :-> [].
