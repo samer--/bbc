@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 import gi
-from pytools.basetools import bind, delay, print_, if_none_else, fork, curry, compose, fst, Context, const, tuncurry, decons, mul, divby
+from pytools.basetools import bind, delay, if_none_else, fork, curry, compose, fst, Context, const, tuncurry, decons, mul, divby
 from pytools.dicttools import def_consult
 
 gi.require_version('Gst', '1.0')
@@ -25,6 +25,7 @@ def io_watch(s, c, f): return lambda: (None, bind(GObject.source_remove, GObject
 def signal_watch(bus): return lambda: (bus.add_signal_watch(), bus.remove_signal_watch)
 def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
+def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
 ctrue = const(True)
 
 @curry(1)
