@@ -37,18 +37,16 @@ mpd_init :-
 %  See mpd_server/2 for description of parameters.
 start_mpd(Port, Options) :- thread_create(mpd_server(Port, Options), _, [detached(true), alias(mpd_server)]).
 
-% :- initialization((debug(mpd(_)), mpd_init), program).
-
-% ------------------------------ State management ------------------------------
-
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
 update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
 
+% ------------------------------ State management ------------------------------
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
 % play_state ---> ps(natural, au_state).
 % au_state   ---> stopped; playing(bool, duration, elapsed, bitrate, format).
-:- dynamic state/2, client/1, queue/2.
+:- dynamic state/2, thread/2, queue/2.
 set_state(Key, Val) :- retractall(state(Key, _)), assert(state(Key, Val)).
+
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -90,19 +88,33 @@ play(Pos, Id, Songs-_, Songs-just(ps(Pos, playing(play, Dur, 0.0, 320, 48000:f:2
    nth0(Pos, Songs, song(Id, E, _)),
    prop(E, duration(Dur)).
 
+with_gst(P, Status) :-
+   setup_call_cleanup(start_gst(PID, IO), 
+                      catch(call(P, PID-IO), Ex, (process_kill(PID), throw(Ex))),
+                      process_wait(PID, Status)).
+
+start_gst(PID,In-Out) :-
+   process_create('python/gst12.py', [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
+   maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]).
+
+gst_queue_server(P) :- thread_get_message(M), gst_qmsg(M, P), gst_queue_server(P).
+gst_qmsg(volume(V), P) :- send(P, 'volume ~f'-V).
+gst_qmsg(uri(URI), P) :- send(P, 'uri ~s'-[URI]).
+send(_-(In-_), Fmt-Args) :- format(In, Fmt, Args). 
+
+registered(N, G) :- thread_self(Id), setup_call_cleanup(assert(thread(N, Id)), G, retract(thread(N, Id))).
+start_gst_thread :- spawn(registered(gst, with_gst(gst_queue_server, _))).
 % ------------------------ client interactor --------------------
 
 %! mpd_interactor is det.
 % Run MPD client interaction using the current user_input and user_output Prolog streams.
-mpd_interactor :-
-   thread_self(Self),
-   setup_call_cleanup(assert(client(Self)), wait_for_input, retract(client(Self))).
+mpd_interactor :- registered(client, wait_for_input).
+wait_for_input :- read_command(Cmd), handle(Cmd).
 
 read_command(Cmd) :-
    read_line_to_codes(user_input, Cmd),
    debug(mpd(command), ">> ~s", [Cmd]).
 
-wait_for_input :- read_command(Cmd), handle(Cmd).
 handle(end_of_file) :- !.
 handle(`close`) :- !.
 handle(Cmd) :- catch(handle1(Cmd), exec(Cmd2), handle(Cmd2)).
@@ -205,7 +217,7 @@ cleanup_listener(Cmd, Self, Id, NextCommand) :-
    debug(mpd(notify), 'Listener exited with ~w', [Status]),
    insist(Status = exception(cmd(NextCommand))).
 
-notify_all(Subsystems) :- forall(client(Id), maplist(notify(Id), Subsystems)).
+notify_all(Subsystems) :- forall(thread(client, Id), maplist(notify(Id), Subsystems)).
 notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
 
 % --- command and reply DCGs -----
@@ -364,8 +376,7 @@ server_loop(Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),
    debug(mpd(connection), "new connection from ~w", [Peer]),
    tcp_open_socket(Slave, In, Out),
-   set_stream(In, close_on_abort(false)),
-   set_stream(Out, close_on_abort(false)),
+   maplist(setup_stream([close_on_abort(false)]), [In, Out]),
    catch(spawn(call_cleanup(client_thread(In, Out, Peer, Allow), (close(In), close(Out)))),
          error(permission_error(create, thread, mpdclient), _), fail), !,
    server_loop(Socket, Allow).
@@ -373,16 +384,16 @@ server_loop(Socket, Allow) :-
 client_thread(In, Out, Peer, Allow) :- call(Allow, Peer), !, service_client(In, Out).
 client_thread(_, Out, _, _) :- format(Out, 'Access denied.~n', []).
 
-set_telnet_stream(Enc, S) :- maplist(set_stream(S), [encoding(Enc), newline(posix)]).
 service_client(In, Out) :-
    set_prolog_IO(In, Out, user_error), prompt(_, ''),
    current_prolog_flag(encoding, Enc),
-   maplist(set_telnet_stream(Enc), [user_input, user_output]),
+   maplist(setup_stream([encoding(Enc), newline(posix)]), [user_input, user_output]),
    writeln('OK MPD 0.20.0'),
    mpd_interactor.
 
 % -------------- DCG and other tools --------------------
 
+setup_stream(Props, S) :- maplist(set_stream(S), Props).
 spawn(G) :- thread_create(G, _, [detached(true)]).
 fjust(P, just(X1), just(X2)) :- call(P, X1, X2).
 pphrase(P) :- phrase(P, C), format('~s', [C]).
