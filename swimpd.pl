@@ -46,7 +46,6 @@ update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S
 :- dynamic state/2, thread/2, queue/2.
 set_state(Key, Val) :- retractall(state(Key, _)), assert(state(Key, Val)).
 
-
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
 
@@ -62,7 +61,6 @@ delete(Pos, Id) -->
    (\< {PS = just(ps(Pos, _))} -> step(keep, next) <\> [player]; []),
    \< (select_nth(Pos, _) <\> fmaybe(update_pos(Pos))).
 
-select_nth(N, X, L1, L2) :- nth0(N, L1, X, L2).
 update_pos(Pos, ps(PPos1, Au), ps(PPos2, Au)) :-
    (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
          
@@ -115,7 +113,6 @@ gst_qmsg(volume(V), P) :- send(P, 'volume ~f'-V).
 gst_qmsg(uri(URI), P) :- send(P, 'uri ~s'-[URI]).
 send(_-(In-_), Fmt-Args) :- format(In, Fmt, Args). 
 
-registered(N, G) :- thread_self(Id), setup_call_cleanup(assert(thread(N, Id)), G, retract(thread(N, Id))).
 start_gst_thread :- spawn(registered(gst, with_gst(gst_queue_server, _))).
 % ------------------------ client interactor --------------------
 
@@ -408,7 +405,9 @@ service_client(In, Out) :-
 % -------------- DCG and other tools --------------------
 
 setup_stream(Props, S) :- maplist(set_stream(S), Props).
+registered(N, G) :- thread_self(Id), setup_call_cleanup(assert(thread(N, Id)), G, retract(thread(N, Id))).
 spawn(G) :- thread_create(G, _, [detached(true)]).
+select_nth(N, X, L1, L2) :- nth0(N, L1, X, L2).
 fmaybe(_, nothing, nothing).
 fmaybe(P, just(X1), just(X2)) :- call(P, X1, X2).
 fjust(P, just(X1), just(X2)) :- call(P, X1, X2).
