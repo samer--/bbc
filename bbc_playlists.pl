@@ -5,14 +5,18 @@
 :- use_module(library(fileutils)).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1]).
 
-save_service_playlist(Dir, Service, Expiry) :-
+save_service_playlist(Now, Dir, Service, Expiry) :-
+   InOneWeek is Now + 7*24*3600,
    debug(bbc, 'Gathering playlist for ~w...', [Service]),
    findall(Children, service_parent_children(Service, _, Children), Families),
    findall(XU-E, (member(Es, Families), member(E, Es), log_failure(entry_xurl(best_hls, E, XU))), Items),
-   aggregate(min(X), E^U^member((X-U)-E, Items), Expiry),
+   foldl(min_expiry, Items, InOneWeek, Expiry),
    format(string(FN), '~s/~s.m3u', [Dir, Service]),
-   debug(bbc, 'Saving playlist for ~w to <~s>...', [Service, FN]),
+   debug(bbc, 'Saving playlist for ~w to "~s"...', [Service, FN]),
    with_output_to_file(FN, (writeln('#EXTM3U'), maplist(write_playlist_item, Items))).
+
+min_expiry((inf-_)-_, E, E) :- !.
+min_expiry((X-_)-_,  E1, E2) :- E2 is min(E1, X).
 
 write_playlist_item((_-URL)-E) :-
    maplist(prop(E), [title(Title), duration(Dur), broadcast(B)]),
@@ -26,7 +30,7 @@ start_service_maintenance(Dir, Service) :-
 maintain_service(Dir, Service) :-
    get_time(Now),
    log_and_succeed(time_service_schedule(Now, Service, _)),
-   save_service_playlist(Dir, Service, Expiry),
+   save_service_playlist(Now, Dir, Service, Expiry),
    sleep_until(Expiry),
    maintain_service(Dir, Service).
 
