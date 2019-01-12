@@ -17,8 +17,6 @@
 /* <module> MPD server for BBC radio programmes.
 
    @todo actually play something
-   @todo check behaviour of play when no current song
-   @todo check if add can change play state
    @todo rethink top level control flow
    @todo unify command arg parsing
    @todo randomised play sequence
@@ -42,8 +40,9 @@ update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S
 
 % ------------------------------ State management ------------------------------
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
-% play_state ---> ps(natural, au_state).
-% au_state   ---> stopped; playing(bool, duration, elapsed, bitrate, format).
+% play_state ---> ps(natural, mayb(pair(pause_state, au_state))).
+% au_state   ---> au(duration, elapsed, bitrate, format).
+% pause_state ---> play; pause.
 :- dynamic state/2, thread/2, queue/2.
 set_state(Key, Val) :- retractall(state(Key, _)), assert(state(Key, Val)).
 
@@ -55,13 +54,18 @@ clear --> \< trans(Q, ([]-nothing)), \> player_if_queue_playing(Q).
 player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
 player_if_playstate_playing(_) --> [player].
 
-deleteid(Id) -->
-   \< trans(Songs1-PS1, Songs2-PS2),
-   {nth0(Pos, Songs1, song(Id, _, _), Songs2)},
-   ( {PS1 = just(ps(Pos, _))} -> {PS2 = nothing}, \> [player]
-   ; {PS2 = PS1}
-   ).
+delete_range(nothing, Id) --> \< get(_-just(ps(Pos, _))), delete(Pos, Id).
+delete_range(just(M:N), Ids) --> {numlist(M, N, Is), reverse(Is, [_|Js])}, foldl(delete, Js, Ids).
+delete_id(Id, Ps) --> delete(Pos, Id) -> {Ps = [Pos|Ps2]}, delete_id(Id, Ps2); {Ps=[]}.
+delete(Pos, Id) -->
+   \< get(Songs-PS), {nth0(Pos, Songs, song(Id,_,_))},
+   (\< {PS = just(ps(Pos, _))} -> step(keep, next) <\> [player]; []),
+   \< (select_nth(Pos, _) <\> fmaybe(update_pos(Pos))).
 
+select_nth(N, X, L1, L2) :- nth0(N, L1, X, L2).
+update_pos(Pos, ps(PPos1, Au), ps(PPos2, Au)) :-
+   (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
+         
 addid([ServiceLongName], nothing) -->
    {longname_service(ServiceLongName, S), findall(E, service_entry(S, E), Entries)},
    ffst(foldl(add(ServiceLongName), _Ids, Entries)).
@@ -73,20 +77,29 @@ addid([ServiceLongName, PID], just(Id)) -->
 add(ServiceLongName, Id, E) --> {entry_tags(ServiceLongName, E, Id, Tags)}, add(song(Id, E, Tags)).
 add(S, Songs1, Songs2) :- append(Songs1, [S], Songs2).
 
-pause(X, ps(C, playing(P1, Dur, El, BR, Au)), ps(C, playing(P2, Dur, El, BR, Au))) :- pausex(X, P1, P2).
+pause(X, ps(C, just(P1 - Au)), ps(C, just(P2 - Au))) :- pausex(X, P1, P2).
 pausex(just(1), _, pause).
 pausex(just(0), _, play).
 pausex(nothing, pause, play).
 pausex(nothing, play, pause).
 
-stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, stopped))).
-next     --> get(_-just(ps(Pos, _))), {succ(Pos, NextPos)}, play(NextPos, _).
-previous --> get(_-just(ps(Pos, _))), {succ(PrevPos, Pos)}, play(PrevPos, _).
+stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
+step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({step(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
+step(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
+step(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
+
 play --> get(_-just(ps(Pos, _))), !, play(Pos, _).
 play --> get([_|_]-nothing), play(0, _).
-play(Pos, Id, Songs-_, Songs-just(ps(Pos, playing(play, Dur, 0.0, 320, 48000:f:2)))) :-
+
+play(Pos, Id) --> play(play, Pos, Id).
+play(Op, Pos, Id, Songs-PS1, Songs-PS2) :-
    nth0(Pos, Songs, song(Id, E, _)),
-   prop(E, duration(Dur)).
+   update_play_state(Op, Pos, E, PS1, PS2).
+
+update_play_state(play, Pos, E, _, just(ps(Pos, just(play-Au)))) :- entry_audio(E, Au).
+update_play_state(keep, Pos, E, just(ps(_, Au1)), just(ps(Pos, Au2))) :- fmaybe(update_audio(E), Au1, Au2).
+update_audio(E, P-_, P-Au) :- entry_audio(E, Au).
+entry_audio(E, au(Dur, 0.0, 320, 48000:f:2)) :- prop(E, duration(Dur)).
 
 with_gst(P, Status) :-
    setup_call_cleanup(start_gst(PID, IO), 
@@ -262,12 +275,13 @@ command(setvol, Tail) :-> {phrase(quoted(num(V)), Tail), upd_and_notify(volume, 
 command(clear, [])    :-> {updating_queue_state(clear)}.
 command(add, Tail)    :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
 command(addid, Tail)  :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, just(Id)))}, report('Id'-Id).
-command(deleteid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_queue_state(deleteid(Id))}.
+command(delete, Tail) :-> {phrase(maybe(quoted(range), R), Tail), updating_queue_state(delete_range(R, _))}.
+command(deleteid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
 command(playid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_play_state(play(_, Id))}.
 command(play, [])     :-> {updating_play_state(play)}.
 command(stop, [])     :-> {updating_play_state(stop)}.
-command(previous, []) :-> {updating_play_state(previous)}.
-command(next, [])     :-> {updating_play_state(next)}.
+command(previous, []) :-> {updating_play_state(step(play, prev))}.
+command(next, [])     :-> {updating_play_state(step(play, next))}.
 command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
@@ -345,8 +359,8 @@ report_play_state(just(ps(Pos,Audio)), Songs) -->
 report_nth_song(Songs, K1, K2, Pos) -->
    {nth0(Pos, Songs, song(Id, _, _))},
    foldl(report, [K1-Pos, K2-Id]).
-report_audio_state(stopped) --> report(state-stop).
-report_audio_state(playing(State, Dur, Elap, BR, Fmt)) -->
+report_audio_state(nothing) --> report(state-stop).
+report_audio_state(just(State - au(Dur, Elap, BR, Fmt))) -->
    foldl(report, [state-State, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
 
 uptime(T) :- get_time(Now), state(start_time, Then), T is Now - Then.
@@ -395,6 +409,8 @@ service_client(In, Out) :-
 
 setup_stream(Props, S) :- maplist(set_stream(S), Props).
 spawn(G) :- thread_create(G, _, [detached(true)]).
+fmaybe(_, nothing, nothing).
+fmaybe(P, just(X1), just(X2)) :- call(P, X1, X2).
 fjust(P, just(X1), just(X2)) :- call(P, X1, X2).
 pphrase(P) :- phrase(P, C), format('~s', [C]).
 
