@@ -1,12 +1,33 @@
 #!/usr/bin/env python
 import sys
 import gi
-from pytools.basetools import bind, delay, if_none_else, fork, curry, compose, fst, Context, const, tuncurry, decons, mul, divby
-from pytools.dicttools import def_consult
+from functools import partial as bind
 
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst, GLib
 Gst.init(None)
+
+# --- pytools digest, for self containment ---
+delay = bind(bind, bind)
+def def_consult(default, d):    return lambda k: d.get(k, default)
+def compose2(f, g): return lambda x: f(g(x))
+def compose(*args): return reduce(compose2, args)
+def const(x):       return lambda _: x
+def app(f, x):      return f(x)
+def tuncurry(f):    return lambda args: reduce(app, args, f)
+def fork(f, g):     return lambda x: (f(x), g(x))
+def fst((x, _)):    return x
+def decons(xs):     return xs[0], xs[1:]
+def mul(y):         return lambda x: x * y
+def divby(y):       return lambda x: x / y
+
+class Context(object):
+    def __init__(self, setup): self.setup = setup
+    def __exit__(self, _1, _2, _3): self.cleanup()
+    def __enter__(self):
+        x, self.cleanup = self.setup()
+        return x
+# ----------- end of digest ------------
 
 MT = Gst.MessageType
 M = Gst.Message
@@ -28,7 +49,7 @@ ctrue = const(True)
 
 def main():
     state = {'state': 'idle', 'duration': 0.0, 'bitrate': 0, 'error': None}
-    sset = curry(1)(state.__setitem__)
+    sset = delay(state.__setitem__)
     events = def_consult(ignore,
                    { MT.EOS:          fork(do(print_, const('eos')), quit)
                    , MT.ERROR:        fork(do(fork(sset('error'), rpt('gst_error')), M.parse_error), quit)
