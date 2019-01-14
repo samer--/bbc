@@ -54,7 +54,7 @@ def main():
                    { MT.EOS:          fork(do(print_, const('eos')), quit)
                    , MT.ERROR:        fork(do(fork(sset('error'), rpt('gst_error')), M.parse_error), quit)
                    , MT.TAG:          do(sset('bitrate'), compose(tl_bitrate, M.parse_tag))
-                   , MT.STREAM_START: do(fork(sset('state'), print_), const('playing'))
+                   , MT.STREAM_START: do(print_, const('started'))
                    })
 
     loop = GObject.MainLoop()
