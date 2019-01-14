@@ -2,8 +2,9 @@
 
 :- use_module(library(socket)).
 :- use_module(library(listutils)).
-:- use_module(library(insist)).
-:- use_module(library(xpath)).
+:- use_module(library(callutils), [true2/2, bt_call/2]).
+:- use_module(library(insist), [insist/1]).
+:- use_module(library(xpath), [xpath/3]).
 :- use_module(library(dcg/basics), [string//1, string_without//2]).
 :- use_module(library(data/pair)).
 :- use_module(library(dcg_core)).
@@ -16,10 +17,13 @@
 
 /* <module> MPD server for BBC radio programmes.
 
-   @todo actually play something
-   @todo rethink top level control flow
-   @todo unify command arg parsing
-   @todo randomised play sequence
+   @todo 
+   rethink top level control flow
+   unify command arg parsing
+   randomised play sequence
+   seek, CLP approach?
+   go to next when finished playing (check gstreamer messages?)
+   remember last position in db
  */
 
 %! mpd_init is det.
@@ -40,7 +44,7 @@ update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S
 
 % ------------------------------ State management ------------------------------
 % state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
-% play_state ---> ps(natural, mayb(pair(pause_state, au_state))).
+% play_state ---> ps(natural, maybe(pair(pause_state, au_state))).
 % au_state   ---> au(duration, elapsed, bitrate, format).
 % pause_state ---> play; pause.
 :- dynamic state/2, thread/2, queue/2.
@@ -61,18 +65,22 @@ delete(Pos, Id) -->
    (\< {PS = just(ps(Pos, _))} -> step(keep, next) <\> [player]; []),
    \< (select_nth(Pos, _) <\> fmaybe(update_pos(Pos))).
 
-update_pos(Pos, ps(PPos1, Au), ps(PPos2, Au)) :-
+update_pos(Pos, ps(PPos1, Slave), ps(PPos2, Slave)) :-
    (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
          
-addid([ServiceLongName], nothing) -->
-   {longname_service(ServiceLongName, S), findall(E, service_entry(S, E), Entries)},
-   ffst(foldl(add(ServiceLongName), _Ids, Entries)).
+addid([LongName], nothing) -->
+   {longname_service(LongName, S), findall(E, service_entry(S, E), Entries)},
+   ffst(foldl(add(LongName), _Ids, Entries)).
 
-addid([ServiceLongName, PID], just(Id)) -->
-   {longname_service(ServiceLongName, S), service_entry(S, E), prop(E, pid(PID))},
-   ffst(add(ServiceLongName, Id, E)).
+addid([LongName, PID], just(Id)) -->
+   {longname_service(LongName, S), service_entry(S, E), prop(E, pid(PID))},
+   ffst(add(LongName, Id, E)).
 
-add(ServiceLongName, Id, E) --> {entry_tags(ServiceLongName, E, Id, Tags)}, add(song(Id, E, Tags)).
+addid(['Live Radio'], nothing) --> {all_services(Services)}, ffst(foldl(add_live, Services, _)).
+addid(['Live Radio', LongName], just(Id)) --> {service(S, _, LongName)}, ffst(add_live(S-LongName, Id)).
+
+add_live(S-SLN, Id) --> {live_service_tags(S-SLN, Tags), pid_id(S, Id)}, add(song(Id, live(S), Tags)).
+add(ServiceName, Id, E) --> {entry_tags(ServiceName, E, Id, Tags)}, add(song(Id, E, Tags)).
 add(S, Songs1, Songs2) :- append(Songs1, [S], Songs2).
 
 pause(X, ps(C, just(P1 - Au)), ps(C, just(P2 - Au))) :- pausex(X, P1, P2).
@@ -80,6 +88,13 @@ pausex(just(1), _, pause).
 pausex(just(0), _, play).
 pausex(nothing, pause, play).
 pausex(nothing, play, pause).
+
+get_audio_info(au(Dur, _Elap, _BR, _Fmt), au(FDur, Elap, BR, Fmt)) :- gst(Id, _), !,
+   maplist(send, ["bitrate", "format", "position"]), FDur is float(Dur),
+   thread_get_message(Id, bitrate(BR), [timeout(1)]),
+   thread_get_message(Id, format(Fmt), [timeout(1)]),
+   thread_get_message(Id, position(Elap), [timeout(1)]).
+get_audio_info(Au, Au).
 
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({step(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
@@ -95,9 +110,42 @@ play(Op, Pos, Id, Songs-PS1, Songs-PS2) :-
    update_play_state(Op, Pos, E, PS1, PS2).
 
 update_play_state(play, Pos, E, _, just(ps(Pos, just(play-Au)))) :- entry_audio(E, Au).
-update_play_state(keep, Pos, E, just(ps(_, Au1)), just(ps(Pos, Au2))) :- fmaybe(update_audio(E), Au1, Au2).
-update_audio(E, P-_, P-Au) :- entry_audio(E, Au).
+update_play_state(keep, Pos, E, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(update_slave(E), Sl1, Sl2).
+update_slave(E, P-_, P-Au) :- entry_audio(E, Au).
+entry_audio(live(_), au(0.0, 0.0, 320, 48000:f:2)) :- !.
 entry_audio(E, au(Dur, 0.0, 320, 48000:f:2)) :- prop(E, duration(Dur)).
+
+enact(volume, [], _, _) :- !.
+enact(volume, [mixer], _, V) :- !, FV is V/100.0, send(fmt('volume ~5f', [FV])).
+enact(queue, Changes) --> {member(player, Changes)} -> \> enact_queue_change; true2.
+enact_queue_change(Songs1-PS1, Songs2-PS2) :- enact_player_change(Songs1-Songs2, PS1, PS2).
+enact_player_change(_, nothing, nothing).
+enact_player_change(_, just(ps(_, Slave)), nothing) :- maybe(stop_if_playing, Slave).
+enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- maybe(cue_and_maybe_play(Songs, Pos), Slave).
+enact_player_change(SongsPair, just(PS1), just(PS2)) :- enact_ps_change(SongsPair, PS1, PS2).
+
+enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :- 
+   nth0(Pos1, Songs1, song(Id1, _, _)), 
+   nth0(Pos2, Songs2, song(Id2, _, _)),
+   (  Id1 \= Id2 -> send("close"), maybe(cue_and_maybe_play(Songs2, Pos2), Sl2)
+   ;  enact_slave_change(Sl1, Sl2)
+   ).
+enact_slave_change(nothing, nothing) :- !.
+enact_slave_change(just(_), nothing) :- !, send("stop").
+enact_slave_change(nothing, just(S-Au)) :- !, maybe_play(S, Au).
+enact_slave_change(just(S1-_Au1), just(S2-_Au2)) :-
+   (  S1-S2 = play-pause -> send("pause")
+   ;  S1-S2 = pause-play -> send("resume")
+   ;  true
+   ).
+maybe_play(P, _) :- P=play -> send("resume"); true.
+stop_if_playing(_) :- send("close").
+cue_and_maybe_play(Songs, Pos, P-Au) :- 
+   nth0(Pos, Songs, song(_, E, _)), spec_url(E, URL),
+   send(fmt('uri ~s', [URL])), maybe_play(P, Au).
+
+spec_url(live(S), URL) :- !, service_live_url(S, URL).
+spec_url(E, URL) :- entry_xurl(redir(dash), E, _-URL).
 
 with_gst(P, Status) :-
    setup_call_cleanup(start_gst(PID, IO), 
@@ -108,12 +156,32 @@ start_gst(PID,In-Out) :-
    process_create('python/gst12.py', [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]).
 
-gst_queue_server(P) :- thread_get_message(M), gst_qmsg(M, P), gst_queue_server(P).
-gst_qmsg(volume(V), P) :- send(P, 'volume ~f'-V).
-gst_qmsg(uri(URI), P) :- send(P, 'uri ~s'-[URI]).
-send(_-(In-_), Fmt-Args) :- format(In, Fmt, Args). 
+:- dynamic gst/2.
+gst_reader_thread(_-(In-Out)) :- 
+   thread_self(Self), 
+   setup_call_cleanup(assert(gst(Self,In)), gst_reader(Self, Out), retract(gst(Self,In))).
 
-start_gst_thread :- spawn(registered(gst, with_gst(gst_queue_server, _))).
+gst_reader(Self, Out) :- state(volume, V), enact(volume, [mixer], _, V), gst_read_next(Self, Out).
+gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
+gst_handle(end_of_file, _, _) :- debug(mpd(gst), 'End of stream from gst', []).
+gst_handle(Codes, Self, Out) :-
+   debug(mpd(gst), '>> ~s', [Codes]),
+   insist(phrase(parse_head(Head, Tail), Codes)),
+   (phrase(gst_message(Head, Msg), Tail) -> thread_send_message(Self, Msg); true),
+   gst_read_next(Self, Out).
+
+gst_message(bitrate, bitrate(BR)) --> num(BR).
+gst_message(position, position(BR)) --> num(BR).
+gst_message(duration, duration(D)) --> num(D).
+gst_message(format, format(Rate:Fmt:Ch)) --> split_on(0':, [nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+sample_fmt(f) --> "F", !, arb.
+sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
+
+gst_volume(V) :- send(fmt('volume ~f',V)).
+gst_uri(URI) :- send(fmt('uri ~s',[URI])).
+send(P) :- gst(_,In), phrase(P, Codes), format(In, '~s\n', [Codes]).
+
+start_gst_thread :- spawn(with_gst(gst_reader_thread, _)).
 % ------------------------ client interactor --------------------
 
 %! mpd_interactor is det.
@@ -241,6 +309,7 @@ maybe_quoted_path(Path) --> {Path=[]}; quoted(path(Path)).
 path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
 path_component(Dir) --> +(notany(`/`)) // atom(Dir).
+path_file(Path, File) :- phrase_string(seqmap_with_sep("/", at, Path), File). % FIXME: generation
 
 idle_filter(nonvar) --> [].
 idle_filter(in(Subsystems)) --> seqmap_with_sep(" ", quoted(atom), Subsystems).
@@ -251,7 +320,7 @@ report(Name, Value) --> fmt('~w: ~w\n', [Name, Value]).
 % --- command implementations -----
 :- meta_predicate upd_and_notify(+, //).
 upd_and_notify(K, P) :-
-   with_mutex(swimpd, (state(K, S1), call_dcg(P, S1-Changes, S2-[]), set_state(K, S2))),
+   with_mutex(swimpd, (state(K, S1), call_dcg(P, S1-Changes, S2-[]), enact(K, Changes, S1, S2), set_state(K, S2))),
    sort(Changes, Changed), notify_all(Changed).
 
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
@@ -296,17 +365,23 @@ update(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, rep
 update_and_notify(Path) :- update(Path), notify_all([database]).
 
 update([]) :- forall(service(S), update_service(S)).
-update([ServiceLongName]) :- service(S, _, ServiceLongName), update_service(S).
+update([ServiceName]) :- service(S, _, ServiceName), update_service(S).
 
+all_services(Services) :- findall(S-SLN, service(S, _, SLN), Services).
 lsinfo([]) -->
-   {findall(S, service(S), Services)},
-   foldl(service_dir, Services).
-lsinfo([ServiceLongName]) -->
-	{ longname_service(ServiceLongName, S),
+   report(directory, 'Live Radio'),
+   {all_services(Services)}, foldl(service_dir, Services).
+lsinfo(['Live Radio']) --> {all_services(Services)}, foldl(live_radio, Services).
+lsinfo([ServiceName]) -->
+	{ longname_service(ServiceName, S),
      findall(Children, service_parent_children(S, _, Children), Families),
      findall(E, (member(Es, Families), member(E, Es)), Items)
 	},
-	foldl(programme(ServiceLongName), Items).
+	foldl(programme(ServiceName), Items).
+
+live_radio(S-ServiceName) -->
+   {live_service_tags(S-ServiceName, Tags), pid_id(S, Id)}, 
+   foldl(report, Tags), report('Id'-Id).
 
 playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
 subrange(just(N:M), L, Sel) :- length(Pre, N), length(PreSel, M), append(PreSel, _, L), append(Pre, Sel, PreSel).
@@ -323,24 +398,37 @@ currentsong(Songs-PS) --> maybe(currentsong(Songs), PS).
 currentsong(Songs, ps(Pos, _)) --> {nth0(Pos, Songs, Song)}, report_song_info(Pos-Song).
 report_song_info(Pos-song(Id, _, Tags)) --> foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
 
-service_dir(S) -->
-   {service(S, _, Name)}, report(directory-Name),
+service_dir(S-Name) -->
+   report(directory-Name),
    (  {service_schedule(S, Sched)}
    -> {xpath(Sched, /self(@updated), Updated)},
       report('Last-Modified'-Updated)
    ;  []
    ).
 
-programme(ServiceLongName, E) -->
-	{ entry_tags(ServiceLongName, E, Id, Tags)},
+programme(ServiceName, E) -->
+	{ insist(entry_tags(ServiceName, E, Id, Tags))},
 	foldl(report, Tags), report('Id'-Id).
 
-entry_tags(ServiceLongName, E, Id, [file-File, 'Title'-Title, 'Comment'-Syn, duration-Dur]) :-
-	maplist(prop(E), [pid(PID), title(Title), synopsis(Syn), duration(Dur)]),
-   % entry_maybe_parent(E, Parent), parent_album(Parent, Album),
-   pid_id(PID, Id), format(string(File),'~w/~w', [ServiceLongName, PID]).
-parent_album(nothing, "<Singleton>").
-parent_album(just(_-Name), Name).
+live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', SLN], File).  
+entry_tags(ServiceName, E, Id, Tags) :- entry_tags(ServiceName, E, Id, Tags, []).
+entry_tags(ServiceName, E, Id) -->
+	[file-File], {prop(E, pid(PID)), pid_id(PID, Id), path_file([ServiceName, PID], File)},
+   tag(title_and_maybe_album, E), foldl(maybe, [tag(broadcast, E), tag(availability, E)]),
+	['Comment'-Syn, duration-Dur], {maplist(prop(E), [synopsis(Syn), duration(Dur)])}. 
+
+
+tag(broadcast, E)    --> {prop(E, broadcast(B)), interval_times(B,T,_), ts_string(T,Broadcast)}, ['Broadcast'-Broadcast].
+tag(availability, E) --> {prop(E, availability(A)), interval_times(A,_,T), ts_string(T,Until)}, ['AvailableUntil'-Until].
+tag(title_and_maybe_album, E) --> 
+   {prop(E, title(FullTitle)), entry_maybe_parent(E, Parent)},
+   {maybe(cut_parent, Parent,  FullTitle, Title)}, ['Title'-Title],
+   maybe(parent_as_album, Parent).
+
+parent_as_album(_-Name) --> ['Album'-Name].
+cut_parent(_-Name) --> maybe((str_cut(Name), str_cut(": "))).
+str_cut(Pre, String, Suff) :- string_concat(Pre, Suff, String).
+ts_string(T, S) :- format_time(string(S), '%c', T). % x for data only
 
 report_status((Ver-(Songs-PS))) -->
    {length(Songs, Len)},
@@ -348,16 +436,17 @@ report_status((Ver-(Songs-PS))) -->
    report_play_state(PS, Songs).
 
 report_play_state(nothing, _) --> report(state-stop).
-report_play_state(just(ps(Pos,Audio)), Songs) -->
+report_play_state(just(ps(Pos,Slave)), Songs) -->
    report_nth_song(Songs, song, songid, Pos), {succ(Pos, Pos1)},
    opt(report_nth_song(Songs, nextsong, nextsongid, Pos1)),
-   report_audio_state(Audio).
+   report_slave_state(Slave).
 
 report_nth_song(Songs, K1, K2, Pos) -->
    {nth0(Pos, Songs, song(Id, _, _))},
    foldl(report, [K1-Pos, K2-Id]).
-report_audio_state(nothing) --> report(state-stop).
-report_audio_state(just(State - au(Dur, Elap, BR, Fmt))) -->
+report_slave_state(nothing) --> report(state-stop).
+report_slave_state(just(State-Au)) --> 
+   {get_audio_info(Au, au(Dur, Elap, BR, Fmt))},
    foldl(report, [state-State, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
 
 uptime(T) :- get_time(Now), state(start_time, Then), T is Now - Then.
@@ -418,6 +507,8 @@ pphrase(P) :- phrase(P, C), format('~s', [C]).
 
 maybe(_, nothing) --> [].
 maybe(P, just(Y)) --> call(P,Y).
+maybe(_, nothing).
+maybe(P, just(X)) :- call(P, X).
 
 digit  --> ctype(digit).
 nat(N) --> {ground(N)}, !, num(N) // nat_digits.
@@ -428,6 +519,9 @@ num(N,S1,S2) :- ground(N), !, format(codes(S1,S2),'~w',[N]).
 num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
 atom(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~w',[A]).
 atom(A,S1,S2) :- list(C,S1,S2), atom_codes(A,C).
+
+split_on(C, Ps) --> seqmap_with_sep([C], without(C), Ps).
+without(C, P) --> break([C]) // P.
 
 quoted(P, X) --> quoted(call(P, X)).
 quoted(P) --> "\"", esc(esc_qq, Codes), "\"", {phrase(P, Codes)}.
