@@ -43,7 +43,7 @@ service(bbc_6music, '6Music', 'BBC 6 Music').
 service(bbc_world_service, 'World', 'BBC World Service').
 
 service_live_url(S, URL) :-
-   format(string(URL), 'http://a.files.bbci.co.uk/media/live/manifesto/audio/simulcast/dash/uk/dash_full/ak/~s', [S]).
+   format(string(URL), 'http://a.files.bbci.co.uk/media/live/manifesto/audio/simulcast/dash/uk/dash_full/ak/~s.mpd', [S]).
 
 mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
