@@ -4,7 +4,7 @@
 :- use_module(library(listutils)).
 :- use_module(library(callutils), [true2/2, bt_call/2]).
 :- use_module(library(insist), [insist/1]).
-:- use_module(library(xpath), [xpath/3]).
+:- use_module(library(xpath)).
 :- use_module(library(dcg/basics), [string//1, string_without//2]).
 :- use_module(library(data/pair)).
 :- use_module(library(dcg_core)).
@@ -143,7 +143,6 @@ enact_slave_change(_,          just(S1-_Au1), just(S2-_Au2)) :-
    ).
 maybe_play(P, _) :- P=play -> send("resume"); true.
 stop_if_playing(SongsPos, _) :- save_position(SongsPos).
-
 cue_and_maybe_play(Songs, Pos, P-Au) :-
    nth0(Pos, Songs, song(_, E, _)), spec_url(E, URL),
    send(fmt('uri ~s', [URL])),
@@ -187,7 +186,7 @@ gst_handle(Codes, Self, Out) :-
 gst_message(bitrate, bitrate(BR)) --> num(BR).
 gst_message(position, position(BR)) --> num(BR).
 gst_message(duration, duration(D)) --> num(D).
-gst_message(format, format(Rate:Fmt:Ch)) --> split_on(0':, [nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+gst_message(format, format(Rate:Fmt:Ch)) --> split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
@@ -540,8 +539,8 @@ num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
 atom(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~w',[A]).
 atom(A,S1,S2) :- list(C,S1,S2), atom_codes(A,C).
 
-split_on(C, Ps) --> seqmap_with_sep([C], without(C), Ps).
-without(C, P) --> break([C]) // P.
+split_on_colon(Ps) --> seqmap_with_sep(":", broken(":"), Ps).
+broken(Cs, P) --> break(Cs) // P.
 
 quoted(P, X) --> quoted(call(P, X)).
 quoted(P) --> "\"", esc(esc_qq, Codes), "\"", {phrase(P, Codes)}.
