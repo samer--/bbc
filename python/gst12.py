@@ -6,7 +6,6 @@ from pytools.dicttools import def_consult
 
 gi.require_version('Gst', '1.0')
 from gi.repository import GObject, Gst, GLib
-# GObject.threads_init()
 Gst.init(None)
 
 MT = Gst.MessageType
@@ -19,7 +18,6 @@ def to_maybe((valid, x)): return x if valid else None
 def quit((_, loop)): loop.quit()
 def do(a,f): return compose(a, f, fst)
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
-def tl_string(tl): return tl.to_string()
 def tl_bitrate(tl): return to_maybe(tl.get_uint('bitrate'))
 def io_watch(s, c, f): return lambda: (None, bind(GObject.source_remove, GObject.io_add_watch(s, c, f)))
 def signal_watch(bus): return lambda: (bus.add_signal_watch(), bus.remove_signal_watch)
@@ -27,11 +25,6 @@ def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
 def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
 ctrue = const(True)
-
-@curry(1)
-def bus_call(actions, bus, message, loop):
-    actions(message.type)((message, loop))
-    return True
 
 def main():
     state = {'state': 'idle', 'duration': 0.0, 'bitrate': 0, 'error': None}
@@ -48,6 +41,8 @@ def main():
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
     common = { 'volume': lambda a: ctrue(p.set_property('volume', float(a[0])))
              , 'qvolume': lambda a: ctrue(rpt('volume')(p.get_property('volume')))
+             , 'qdevice':  lambda a: ctrue(rpt('device')(p.get_property('audio-sink').get_property('device')))
+             , 'device':   lambda a: ctrue(p.get_property('audio-sink').set_property('device', a[0]))
              , 'print':    lambda a: ctrue(print_(a[0]))
              }
     def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), dict(common, **d)))
@@ -66,6 +61,7 @@ def main():
                      , 'format':   lambda _: rpt('format')(fmt_cap(p.emit('get-audio-pad', 0).get_current_caps()[0]))
                      })
 
+    def on_message(_, message, loop): return ctrue(events(message.type)((message, loop)))
     def on_input(s, _):
         try: player(read_command(s))
         except Exception as ex: print "error", ex
@@ -78,7 +74,7 @@ def main():
 
     top = handler({'quit': const(False), 'uri': lambda a: ctrue((p.set_property('uri', a[0]), go()))})
     bus = p.get_bus()
-    bus.connect("message", bus_call(events), loop)
+    bus.connect("message", on_message, loop)
     with Context(signal_watch(bus)): 
         while top(read_command(sys.stdin)): pass
 
