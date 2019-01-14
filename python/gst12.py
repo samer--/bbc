@@ -18,7 +18,7 @@ ignore = const(None)
 def to_maybe((valid, x)): return x if valid else None
 def quit((_, loop)): loop.quit()
 def do(a,f): return compose(a, f, fst)
-def rpt(l): return lambda x: print_('%s: %s' % (l, str(x)))
+def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_string(tl): return tl.to_string()
 def tl_bitrate(tl): return to_maybe(tl.get_uint('bitrate'))
 def io_watch(s, c, f): return lambda: (None, bind(GObject.source_remove, GObject.io_add_watch(s, c, f)))
@@ -37,7 +37,7 @@ def main():
     state = {'state': 'idle', 'duration': 0.0, 'bitrate': 0, 'error': None}
     sset = curry(1)(state.__setitem__)
     events = def_consult(ignore,
-                   { MT.EOS:          fork(do(rpt('eos'), const('idle')), quit)
+                   { MT.EOS:          fork(do(print_, const('eos')), quit)
                    , MT.ERROR:        fork(do(fork(sset('error'), rpt('gst_error')), M.parse_error), quit)
                    , MT.TAG:          do(sset('bitrate'), compose(tl_bitrate, M.parse_tag))
                    , MT.STREAM_START: do(fork(sset('state'), print_), const('playing'))
@@ -46,14 +46,18 @@ def main():
     loop = GObject.MainLoop()
     p = Gst.ElementFactory.make("playbin", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
-    vol_control = { 'volume': lambda a: ctrue(p.set_property('volume', float(a[0])))
-                  , 'qvolume': lambda a: ctrue(rpt('volume')(p.get_property('volume'))) }
-    def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), dict(vol_control, **d)))
-    player = handler({ 'stop':     lambda _: loop.quit()
+    common = { 'volume': lambda a: ctrue(p.set_property('volume', float(a[0])))
+             , 'qvolume': lambda a: ctrue(rpt('volume')(p.get_property('volume')))
+             , 'print':    lambda a: ctrue(print_(a[0]))
+             }
+    def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), dict(common, **d)))
+    player = handler({ 'close':    lambda _: loop.quit()
+                     , 'stop':     lambda _: (stop(), sset('state')('stopped'))
                      , 'pause':    lambda _: (pause(), sset('state')('paused'))
                      , 'resume':   lambda _: (play(), sset('state')('playing'))
                      , 'volume':   lambda a: p.set_property('volume', float(a[0]))
                      , 'qvolume':  lambda a: rpt('volume')(p.get_property('volume'))
+                     , 'quri':     lambda a: rpt('uri')(p.get_property('uri'))
                      , 'duration': lambda _: rpt('duration')(ns_to_s(p.query_duration(_FORMAT_TIME)[1]))
                      , 'position': lambda _: rpt('position')(ns_to_s(p.query_position(_FORMAT_TIME)[1]))
                      , 'bitrate':  lambda _: rpt('bitrate')(state['bitrate'])
@@ -70,7 +74,7 @@ def main():
     def go():
         with Context(io_watch(sys.stdin, GObject.IO_IN, on_input)):
             with Context(lambda: (None, stop)): 
-                play(); sset('state')('preroll'); loop.run()
+                pause(); sset('state')('paused'); loop.run()
 
     top = handler({'quit': const(False), 'uri': lambda a: ctrue((p.set_property('uri', a[0]), go()))})
     bus = p.get_bus()
