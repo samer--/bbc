@@ -1,5 +1,5 @@
-:- module(bbc_db, [interval_times/3, service/1, service/3, time_service_schedule/3, service_schedule/2,
-                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/2, play_entry/3,
+:- module(bbc_db, [service/1, service/3, time_service_schedule/3, service_schedule/2, service_live_url/2,
+                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/2, play_entry/3, interval_times/3,
                    entry_maybe_parent/2, service_parent_child/3, service_parent_children/3]).
 
 :- use_module(library(sgml)).
@@ -41,6 +41,9 @@ service(bbc_radio_fourfm,'R4', 'BBC Radio 4 FM').
 service(bbc_radio_four_extra, 'R4X', 'BBC Radio 4 Extra').
 service(bbc_6music, '6Music', 'BBC 6 Music').
 service(bbc_world_service, 'World', 'BBC World Service').
+
+service_live_url(S, URL) :-
+   format(string(URL), 'http://a.files.bbci.co.uk/media/live/manifesto/audio/simulcast/dash/uk/dash_full/ak/~s', [S]).
 
 mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
