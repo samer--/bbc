@@ -4,7 +4,7 @@
 :- use_module(library(listutils)).
 :- use_module(library(callutils), [true2/2, bt_call/2]).
 :- use_module(library(insist), [insist/1]).
-:- use_module(library(xpath), [xpath/3]).
+:- use_module(library(xpath)).
 :- use_module(library(dcg/basics), [string//1, string_without//2]).
 :- use_module(library(data/pair)).
 :- use_module(library(dcg_core)).
@@ -17,7 +17,7 @@
 
 /* <module> MPD server for BBC radio programmes.
 
-   @todo 
+   @todo
    rethink top level control flow
    unify command arg parsing
    randomised play sequence
@@ -67,7 +67,7 @@ delete(Pos, Id) -->
 
 update_pos(Pos, ps(PPos1, Slave), ps(PPos2, Slave)) :-
    (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
-         
+
 addid([LongName], nothing) -->
    {longname_service(LongName, S), findall(E, service_entry(S, E), Entries)},
    ffst(foldl(add(LongName), _Ids, Entries)).
@@ -124,8 +124,8 @@ enact_player_change(_, just(ps(_, Slave)), nothing) :- maybe(stop_if_playing, Sl
 enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- maybe(cue_and_maybe_play(Songs, Pos), Slave).
 enact_player_change(SongsPair, just(PS1), just(PS2)) :- enact_ps_change(SongsPair, PS1, PS2).
 
-enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :- 
-   nth0(Pos1, Songs1, song(Id1, _, _)), 
+enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
+   nth0(Pos1, Songs1, song(Id1, _, _)),
    nth0(Pos2, Songs2, song(Id2, _, _)),
    (  Id1 \= Id2 -> send("close"), maybe(cue_and_maybe_play(Songs2, Pos2), Sl2)
    ;  enact_slave_change(Sl1, Sl2)
@@ -140,7 +140,7 @@ enact_slave_change(just(S1-_Au1), just(S2-_Au2)) :-
    ).
 maybe_play(P, _) :- P=play -> send("resume"); true.
 stop_if_playing(_) :- send("close").
-cue_and_maybe_play(Songs, Pos, P-Au) :- 
+cue_and_maybe_play(Songs, Pos, P-Au) :-
    nth0(Pos, Songs, song(_, E, _)), spec_url(E, URL),
    send(fmt('uri ~s', [URL])), maybe_play(P, Au).
 
@@ -148,7 +148,7 @@ spec_url(live(S), URL) :- !, service_live_url(S, URL).
 spec_url(E, URL) :- entry_xurl(redir(dash), E, _-URL).
 
 with_gst(P, Status) :-
-   setup_call_cleanup(start_gst(PID, IO), 
+   setup_call_cleanup(start_gst(PID, IO),
                       catch(call(P, PID-IO), Ex, (process_kill(PID), throw(Ex))),
                       process_wait(PID, Status)).
 
@@ -157,8 +157,8 @@ start_gst(PID,In-Out) :-
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]).
 
 :- dynamic gst/2.
-gst_reader_thread(_-(In-Out)) :- 
-   thread_self(Self), 
+gst_reader_thread(_-(In-Out)) :-
+   thread_self(Self),
    setup_call_cleanup(assert(gst(Self,In)), gst_reader(Self, Out), retract(gst(Self,In))).
 
 gst_reader(Self, Out) :- state(volume, V), enact(volume, [mixer], _, V), gst_read_next(Self, Out).
@@ -173,7 +173,7 @@ gst_handle(Codes, Self, Out) :-
 gst_message(bitrate, bitrate(BR)) --> num(BR).
 gst_message(position, position(BR)) --> num(BR).
 gst_message(duration, duration(D)) --> num(D).
-gst_message(format, format(Rate:Fmt:Ch)) --> split_on(0':, [nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+gst_message(format, format(Rate:Fmt:Ch)) --> split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
@@ -380,7 +380,7 @@ lsinfo([ServiceName]) -->
 	foldl(programme(ServiceName), Items).
 
 live_radio(S-ServiceName) -->
-   {live_service_tags(S-ServiceName, Tags), pid_id(S, Id)}, 
+   {live_service_tags(S-ServiceName, Tags), pid_id(S, Id)},
    foldl(report, Tags), report('Id'-Id).
 
 playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
@@ -410,17 +410,17 @@ programme(ServiceName, E) -->
 	{ insist(entry_tags(ServiceName, E, Id, Tags))},
 	foldl(report, Tags), report('Id'-Id).
 
-live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', SLN], File).  
+live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', SLN], File).
 entry_tags(ServiceName, E, Id, Tags) :- entry_tags(ServiceName, E, Id, Tags, []).
 entry_tags(ServiceName, E, Id) -->
 	[file-File], {prop(E, pid(PID)), pid_id(PID, Id), path_file([ServiceName, PID], File)},
    tag(title_and_maybe_album, E), foldl(maybe, [tag(broadcast, E), tag(availability, E)]),
-	['Comment'-Syn, duration-Dur], {maplist(prop(E), [synopsis(Syn), duration(Dur)])}. 
+	['Comment'-Syn, duration-Dur], {maplist(prop(E), [synopsis(Syn), duration(Dur)])}.
 
 
 tag(broadcast, E)    --> {prop(E, broadcast(B)), interval_times(B,T,_), ts_string(T,Broadcast)}, ['Broadcast'-Broadcast].
 tag(availability, E) --> {prop(E, availability(A)), interval_times(A,_,T), ts_string(T,Until)}, ['AvailableUntil'-Until].
-tag(title_and_maybe_album, E) --> 
+tag(title_and_maybe_album, E) -->
    {prop(E, title(FullTitle)), entry_maybe_parent(E, Parent)},
    {maybe(cut_parent, Parent,  FullTitle, Title)}, ['Title'-Title],
    maybe(parent_as_album, Parent).
@@ -445,7 +445,7 @@ report_nth_song(Songs, K1, K2, Pos) -->
    {nth0(Pos, Songs, song(Id, _, _))},
    foldl(report, [K1-Pos, K2-Id]).
 report_slave_state(nothing) --> report(state-stop).
-report_slave_state(just(State-Au)) --> 
+report_slave_state(just(State-Au)) -->
    {get_audio_info(Au, au(Dur, Elap, BR, Fmt))},
    foldl(report, [state-State, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
 
@@ -520,8 +520,8 @@ num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
 atom(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~w',[A]).
 atom(A,S1,S2) :- list(C,S1,S2), atom_codes(A,C).
 
-split_on(C, Ps) --> seqmap_with_sep([C], without(C), Ps).
-without(C, P) --> break([C]) // P.
+split_on_colon(Ps) --> seqmap_with_sep(":", broken(":"), Ps).
+broken(Cs, P) --> break(Cs) // P.
 
 quoted(P, X) --> quoted(call(P, X)).
 quoted(P) --> "\"", esc(esc_qq, Codes), "\"", {phrase(P, Codes)}.
