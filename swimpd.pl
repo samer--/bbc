@@ -530,9 +530,8 @@ maybe(_, nothing).
 maybe(P, just(X)) :- call(P, X).
 
 digit  --> ctype(digit).
-nat(N) --> {ground(N)}, !, num(N) // nat_digits.
-nat(N) --> nat_digits // num(N).
-nat_digits --> +digit.
+nat(N) --> {ground(N)}, !, num(N) // +digit.
+nat(N) --> +digit // num(N).
 
 num(N,S1,S2) :- ground(N), !, format(codes(S1,S2),'~w',[N]).
 num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
