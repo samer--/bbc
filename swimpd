@@ -6,5 +6,6 @@ user:file_search_path(bbc, 'prolog').
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
 
-:- mpd_init, start_mpd(6601, [allow(local)]), start_gst_thread(50).
+main([A1]) :- atom_number(A1, Port), mpd_init, start_mpd(Port, [allow(local)]), start_gst_thread(50).
+:- current_prolog_flag(argv, Argv), main(Argv).
 % vim: ft=prolog
