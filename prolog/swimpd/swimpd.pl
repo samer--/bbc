@@ -31,6 +31,10 @@
    seek, CLP approach?
    go to next when finished playing and delete stored position (check gstreamer messages?)
    allow different alsa device (audio-sink, device)
+   add arbitrary PID (works for TV too!)
+   state persistence
+   add 'shelf' for keeping programmes
+   fix for ncmpcpp, MPDroid, Theremin (artist?)
  */
 
 :- dynamic queue/2.
