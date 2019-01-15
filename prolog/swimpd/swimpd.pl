@@ -18,7 +18,7 @@
 :- use_module(telnetd,  [telnet_server/3]).
 :- use_module(asyncu,   [thread/2, registered/2, spawn/1, setup_stream/2]).
 :- use_module(gst,      [gst_audio_info/3, enact_player_change/3, gst/2, start_gst_thread/1, set_volume/1]).
-:- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, parse_head//2, nat//1,
+:- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, parse_head//2, nat//1, decimal//0,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3]).
 
 
@@ -90,6 +90,8 @@ pausex(just(0), _, play).
 pausex(nothing, pause, play).
 pausex(nothing, play, pause).
 
+seekcur(rel(DPos)) --> {gst:send(fmt("seekrel ~f", [DPos]))}. % FIXME: No!!
+seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 seekid(Id, PPos) --> current_id(Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 current_id(Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
@@ -159,13 +161,14 @@ command(previous, []) :-> {updating_play_state(step(play, prev))}.
 command(next, [])     :-> {updating_play_state(step(play, next))}.
 command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
 command(seekid, Tail) :-> {phrase((quoted(num(Id)), " ", quoted(num(PPos))), Tail), updating_play_state(seekid(Id, PPos))}.
+command(seekcur, Tail) :-> {phrase(quoted(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
 command(list, _)      :-> "Music\nSpoken\nNews\n".
 command(listplaylists, _) :-> [].
 command(stats, [])    :->
    {uptime(T), state(dbtime, D), thread_self(Id), thread_statistics(Id, Stats),
-    with_output_to(user_error, print_term(Stats, []))},
+    print_term(Stats, [output(user_error)])},
    foldl(report, [artists-1, albums-10, songs-90, uptime-T, db_update-D]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
@@ -268,6 +271,9 @@ uptime(T) :- get_time(Now), state(start_time, Then), T is Now - Then.
 % --- command and reply DCGs -----
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
 
+seek_spec(abs(T)) --> decimal // num(T).
+seek_spec(rel(T)) --> (any(`+-`), decimal) // num(T).
+seek_dir(M) --> "+", {M=fwd}; "-", {M=bwd}.
 maybe_quoted_path(Path) --> {Path=[]}; quoted(path(Path)).
 path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
