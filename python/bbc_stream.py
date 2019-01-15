@@ -34,9 +34,9 @@ def dash_for_ms(pred, ms):
                   , opt('-p', '--protocol', val(one_of(['http', 'https']), default('http')), 'Transfer protocol')
                   , opt('-m', '--mediaset', val(one_of(mediasets), default('pc')), 'Mediaset identifier')
                   ])
-def dash(opts):
+def main(opts):
     ms = uget(mediaset(opts.ver, opts.mediaset, opts.pid if opts.is_vpid else vpid(uget(playlist(opts.pid)))))
     urls = map(snd, sorted(dash_for_ms(conj(transfer_format(opts.format), protocol(opts.protocol)), ms), key=fst))
     for_each(print_, urls if opts.all else urls[opts.index:opts.index+1])
 
-if __name__ == '__main__': run(dash)
+if __name__ == '__main__': run(main)

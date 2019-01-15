@@ -1,0 +1,10 @@
+﻿/*  Saved settings
+    Date: Thu Aug  7 12:15:38 2014
+*/
+
+
+%	Application name
+setting(webutils:appname, "swiPlayer").
+
+%	CSS framework and page style
+setting(swiplayer:style, kube(swiplayer:nav)).

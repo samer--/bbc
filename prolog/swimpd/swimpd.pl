@@ -1,4 +1,4 @@
-:- module(swimpd, [ in/2, start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0 ]).
+:- module(swimpd, [in/2, start_mpd/2, mpd_server/2, mpd_interactor/0, mpd_init/0, start_gst_thread/0]).
 
 :- use_module(library(socket)).
 :- use_module(library(listutils)).
@@ -12,8 +12,8 @@
 :- use_module(library(dcg_pair)).
 :- use_module(library(snobol)).
 :- use_module(library(memo)).
-:- use_module(bbc_tools, [in/2, enum/2, log_and_succeed/1]).
-:- use_module(bbc_db).
+:- use_module(bbc(bbc_tools), [in/2, enum/2, log_and_succeed/1]).
+:- use_module(bbc(bbc_db)).
 
 /* <module> MPD server for BBC radio programmes.
 
@@ -166,7 +166,7 @@ with_gst(P, Status) :-
                       process_wait(PID, Status)).
 
 start_gst(PID,In-Out) :-
-   process_create('python/gst12.py', [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
+   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]).
 
 :- dynamic gst/2.
@@ -538,7 +538,7 @@ num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
 atom(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~w',[A]).
 atom(A,S1,S2) :- list(C,S1,S2), atom_codes(A,C).
 
-split_on_colon(Ps) --> seqmap_with_sep(":", broken(":"), Ps).
+split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
 quoted(P, X) --> quoted(call(P, X)).

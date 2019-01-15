@@ -44,6 +44,7 @@ def io_watch(s, c, f): return lambda: (None, bind(GObject.source_remove, GObject
 def signal_watch(bus): return lambda: (bus.add_signal_watch(), bus.remove_signal_watch)
 def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
+def find_cap(c): return c
 def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
 ctrue = const(True)
 
@@ -79,7 +80,7 @@ def main():
                      , 'bitrate':  lambda _: rpt('bitrate')(state['bitrate'])
                      , 'state':    lambda _: rpt('state')(state['state'])
                      , 'seek':     lambda a: p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(float(a[0])))
-                     , 'format':   lambda _: rpt('format')(fmt_cap(p.emit('get-audio-pad', 0).get_current_caps()[0]))
+                     , 'format':   lambda _: rpt('format')(fmt_cap(p.emit('get-audio-pad', 0).get_current_caps().get_structure(0)))
                      })
 
     def on_message(_, message, loop): return ctrue(events(message.type)((message, loop)))
@@ -90,13 +91,13 @@ def main():
 
     def go():
         with Context(io_watch(sys.stdin, GObject.IO_IN, on_input)):
-            with Context(lambda: (None, stop)): 
+            with Context(lambda: (None, stop)):
                 pause(); sset('state')('paused'); loop.run()
 
     top = handler({'quit': const(False), 'uri': lambda a: ctrue((p.set_property('uri', a[0]), go()))})
     bus = p.get_bus()
     bus.connect("message", on_message, loop)
-    with Context(signal_watch(bus)): 
+    with Context(signal_watch(bus)):
         while top(read_command(sys.stdin)): pass
 
 if __name__ == '__main__': main()
