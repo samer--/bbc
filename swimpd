@@ -1,0 +1,10 @@
+#!/usr/bin/env swipl
+user:file_search_path(python, 'python').
+user:file_search_path(bbc, 'prolog').
+:- use_module(prolog/swimpd/swimpd).
+
+local(ip(127,0,0,1)).
+local(ip(192,168,1,_)).
+
+:- mpd_init, start_mpd(6601, [allow(local)]), start_gst_thread.
+% vim: ft=prolog
