@@ -17,6 +17,7 @@ def app(f, x):      return f(x)
 def tuncurry(f):    return lambda args: reduce(app, args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
 def fst((x, _)):    return x
+def snd((_, x)):    return x
 def decons(xs):     return xs[0], xs[1:]
 def mul(y):         return lambda x: x * y
 def divby(y):       return lambda x: x / y
@@ -39,7 +40,7 @@ def to_maybe((valid, x)): return x if valid else None
 def quit((_, loop)): loop.quit()
 def do(a,f): return compose(a, f, fst)
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
-def tl_bitrate(tl): return to_maybe(tl.get_uint('bitrate'))
+def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
 def io_watch(s, c, f): return lambda: (None, bind(GObject.source_remove, GObject.io_add_watch(s, c, f)))
 def signal_watch(bus): return lambda: (bus.add_signal_watch(), bus.remove_signal_watch)
 def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
@@ -67,6 +68,8 @@ def main():
              , 'device':   lambda a: ctrue(p.get_property('audio-sink').set_property('device', a[0]))
              , 'print':    lambda a: ctrue(print_(a[0]))
              }
+    def position(): return ns_to_s(p.query_position(_FORMAT_TIME)[1])
+    def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t))
     def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), dict(common, **d)))
     player = handler({ 'close':    lambda _: loop.quit()
                      , 'stop':     lambda _: (stop(), sset('state')('stopped'))
@@ -76,10 +79,11 @@ def main():
                      , 'qvolume':  lambda a: rpt('volume')(p.get_property('volume'))
                      , 'quri':     lambda a: rpt('uri')(p.get_property('uri'))
                      , 'duration': lambda _: rpt('duration')(ns_to_s(p.query_duration(_FORMAT_TIME)[1]))
-                     , 'position': lambda _: rpt('position')(ns_to_s(p.query_position(_FORMAT_TIME)[1]))
+                     , 'position': lambda _: rpt('position')(position())
                      , 'bitrate':  lambda _: rpt('bitrate')(state['bitrate'])
                      , 'state':    lambda _: rpt('state')(state['state'])
-                     , 'seek':     lambda a: p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(float(a[0])))
+                     , 'seekrel':  lambda a: seek(float(a[0]) + position())
+                     , 'seek':     lambda a: seek(float(a[0]))
                      , 'format':   lambda _: rpt('format')(fmt_cap(p.emit('get-audio-pad', 0).get_current_caps().get_structure(0)))
                      })
 
