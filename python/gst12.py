@@ -4,7 +4,7 @@ import gi
 from functools import partial as bind
 
 gi.require_version('Gst', '1.0')
-from gi.repository import GObject, Gst, GLib
+from gi.repository import GObject, Gst
 Gst.init(None)
 
 # --- pytools digest, for self containment ---
@@ -52,7 +52,7 @@ def main():
     state = {'state': 'idle', 'duration': 0.0, 'bitrate': 0, 'error': None}
     sset = delay(state.__setitem__)
     events = def_consult(ignore,
-                   { MT.EOS:          fork(do(print_, const('eos')), quit)
+                   { MT.EOS:          fork(compose(print_, const('eos')), compose(sset('state'), const('stopped')))
                    , MT.ERROR:        fork(do(fork(sset('error'), rpt('gst_error')), M.parse_error), quit)
                    , MT.TAG:          do(sset('bitrate'), compose(tl_bitrate, M.parse_tag))
                    , MT.STREAM_START: do(print_, const('started'))
