@@ -8,7 +8,7 @@
 :- use_module(asyncu, [spawn/1, setup_stream/2]).
 :- use_module(tools,  [parse_head//2, num//1, nat//1, maybe/2]).
 
-:- multifile spec_url/2.
+:- multifile spec_url/2, notify_eos/0.
 
 with_gst(P, Status) :-
    setup_call_cleanup(start_gst(PID, IO),
@@ -30,13 +30,14 @@ gst_handle(end_of_file, _, _) :- debug(mpd(gst), 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
    debug(mpd(gst), '~~> ~s', [Codes]),
    insist(phrase(parse_head(Head, Tail), Codes)),
-   (phrase(gst_message(Head, Msg), Tail) -> thread_send_message(Self, Msg); true),
+   (phrase(gst_message(Head, Msgs), Tail) -> maplist(thread_send_message(Self), Msgs); true),
    gst_read_next(Self, Out).
 
-gst_message(bitrate, bitrate(BR)) --> num(BR).
-gst_message(position, position(BR)) --> num(BR).
-gst_message(duration, duration(D)) --> num(D).
-gst_message(format, format(Rate:Fmt:Ch)) --> split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+gst_message(eos, []) --> {notify_eos}.
+gst_message(bitrate, [bitrate(BR)]) --> num(BR).
+gst_message(position, [position(BR)]) --> num(BR).
+gst_message(duration, [duration(D)]) --> num(D).
+gst_message(format, [format(Rate:Fmt:Ch)]) --> split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 

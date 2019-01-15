@@ -123,6 +123,7 @@ enact_queue_change(Songs1-PS1, Songs2-PS2) :- enact_player_change(Songs1-Songs2,
 
 gst:spec_url(live(S), URL) :- !, service_live_url(S, URL).
 gst:spec_url(E, URL) :- entry_xurl(redir(dash), E, _-URL).
+gst:notify_eos :- updating_play_state(stop).
 
 mpd_protocol:notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
 
