@@ -90,6 +90,9 @@ pausex(just(0), _, play).
 pausex(nothing, pause, play).
 pausex(nothing, play, pause).
 
+seekid(Id, PPos) --> current_id(Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
+current_id(Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
+
 get_audio_info(Au1, Au2) :- gst(Id, _), !, gst_audio_info(Id, Au1, Au2).
 get_audio_info(Au, Au).
 
@@ -154,6 +157,7 @@ command(stop, [])     :-> {updating_play_state(stop)}.
 command(previous, []) :-> {updating_play_state(step(play, prev))}.
 command(next, [])     :-> {updating_play_state(step(play, next))}.
 command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
+command(seekid, Tail) :-> {phrase((quoted(num(Id)), " ", quoted(num(PPos))), Tail), updating_play_state(seekid(Id, PPos))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
 command(list, _)      :-> "Music\nSpoken\nNews\n".
