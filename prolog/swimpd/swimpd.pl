@@ -56,7 +56,7 @@ mpd_init :-
 start_mpd(Port, Options) :- thread_create(telnet_server(mpd_interactor, Port, Options), _, [detached(true), alias(mpd_server)]).
 
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
-update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), T is round(Now), set_state(dbtime, T).
+update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), round(T,Now), set_state(dbtime, T).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
