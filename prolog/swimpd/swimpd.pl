@@ -56,7 +56,7 @@ mpd_init :-
 start_mpd(Port, Options) :- thread_create(telnet_server(mpd_interactor, Port, Options), _, [detached(true), alias(mpd_server)]).
 
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
-update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), set_state(dbtime, Now).
+update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), T is round(Now), set_state(dbtime, T).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -171,10 +171,7 @@ command(seekid, Tail) :-> {phrase((quoted(num(Id)), " ", quoted(num(PPos))), Tai
 command(seekcur, Tail) :-> {phrase(quoted(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(stats, [])    :->
-   {uptime(T), state(dbtime, D), thread_self(Id), thread_statistics(Id, Stats),
-    print_term(Stats, [output(user_error)])},
-   foldl(report, [artists-1, albums-10, songs-90, uptime-T, db_update-D]).
+command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-1, uptime-T, db_update-D]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(playlistinfo, Tail) :-> {phrase(maybe(quoted(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
@@ -186,6 +183,7 @@ command(list, _)      :-> [].
 command(decoders, []) :-> [].
 command(ping, [])     :-> [].
 
+thread_stats :- thread_self(Id), thread_statistics(Id, Stats), print_term(Stats, [output(user_error)]).
 update(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
 update_and_notify(Path) :- update(Path), notify_all([database]).
 
@@ -275,7 +273,7 @@ report_slave_state(just(State-Au)) -->
    {get_audio_info(Au, au(Dur, Elap, BR, Fmt)), format(string(Time), '~0f:~0f', [Elap, Dur])},
    foldl(report, [state-State, time-Time, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
 
-uptime(T) :- get_time(Now), state(start_time, Then), T is Now - Then.
+uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
 
 % --- command and reply DCGs -----
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
