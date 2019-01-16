@@ -1,4 +1,4 @@
-:- module(swimpd, [in/2, start_mpd/2, mpd_interactor/0, mpd_init/0, start_gst_thread/1]).
+:- module(swimpd, [in/2, start_mpd/2, mpd_interactor/0, mpd_init/0, start_gst_thread/1, restore_state/1]).
 
 :- use_module(library(socket)).
 :- use_module(library(listutils)).
@@ -19,7 +19,7 @@
 :- use_module(asyncu,   [thread/2, registered/2, spawn/1, setup_stream/2]).
 :- use_module(gst,      [gst_audio_info/3, enact_player_change/3, gst/2, start_gst_thread/1, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, parse_head//2, nat//1, decimal//0,
-                         report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3]).
+                         flip/4, report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3]).
 
 
 /* <module> MPD server for BBC radio programmes.
@@ -38,6 +38,8 @@
    fix failed status after play (gst player has no caps yet?)
    swap client thread roles while idle
    get format once on play; get bitrate notifications instead of polling
+   fix parent handling: series and brand
+   memoise db stats: number of programmes, number of brands
  */
 
 :- dynamic queue/2.
@@ -55,8 +57,21 @@ mpd_init :-
 %  See mpd_server/2 for description of parameters.
 start_mpd(Port, Options) :- thread_create(telnet_server(mpd_interactor, Port, Options), _, [detached(true), alias(mpd_server)]).
 
+:- meta_predicate restore_state(2).
+restore_state(State) :-
+   maplist(State, [volume, queue], [Vol, _-(Songs-_)]),
+   maplist(translate_id(State), Songs, Songs2),
+   upd_and_notify(volume, (\< set(Vol), \> [mixer])),
+   updating_queue_state(\< \< flip(append, Songs2)).
+
+translate_id(State, song(Id1, E, Tags), song(Id2, E, Tags)) :-
+   (  E = live(S) -> pid_id(S, Id2)
+   ;  prop(E, pid(PID)), pid_id(PID, Id2),
+      (call(State, position(Id1), PPos) -> set_state(position(Id2), PPos); true)
+   ).
+
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
-update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), round(T,Now), set_state(dbtime, T).
+update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)), round(Now,T), set_state(dbtime, T).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -285,4 +300,3 @@ path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
 path_component(Dir) --> +(notany(`/`)) // atom(Dir).
 path_file(Path, File) :- phrase_string(seqmap_with_sep("/", at, Path), File). % FIXME: generation
-
