@@ -5,7 +5,7 @@
 :- use_module(asyncu, [registered/2, thread/2]).
 :- use_module(tools,  [quoted//2, atom//1, report//2, parse_head//2]).
 
-:- multifile notify/2, command//2.
+:- multifile command//2.
 
 %! mpd_interactor is det.
 % Run MPD client interaction using the current user_input and user_output Prolog streams.
@@ -78,10 +78,8 @@ accum_cont(Cmd) --> [Cmd], accum.
 % -- notification system ---
 listener(Id-Filter, ToPutBack) :-
    thread_get_message(Id, Msg),
-   debug(mpd(notify), 'Listener head got message ~w.', [Msg]),
    message_queue_property(Id, size(N)), length(Msgs, N),
    maplist(thread_get_message(Id), Msgs),
-   debug(mpd(notify), 'Listener processing ~w...', [[Msg|Msgs]]),
    listener_msg(Msg, Msgs, Id-Filter, []-ToPutBack).
 
 listener_msg(broken, _, _, _) :- throw(broken).
@@ -101,12 +99,10 @@ listener_msg(changed(S), Msgs, E, ToReport-ToPutBack) :-
 listener_msgs([Msg|Msgs], E, S) :- listener_msg(Msg, Msgs, E, S).
 listener_msgs([], E, []-ToPutBack) :- !, listener(E, ToPutBack).
 listener_msgs([], Id-_, ToReport-ToPutBack) :-
-   debug(mpd(notify), 'Listener reporting changes in ~w...', [ToReport]),
    reply_phrase(foldl(report(changed), ToReport)), reply(ok),
    listener_tail_wait(Id, ToPutBack).
 
 listener_tail_wait(Id, ToPutBack) :-
-   debug(mpd(notify), 'Listener tail waiting...', []),
    thread_get_message(Id, Msg),
    listener_tail_msg(Msg, Id, ToPutBack).
 
@@ -118,7 +114,7 @@ cleanup_listener(Cmd, Self, Id, NextCommand) :-
    (var(Cmd) -> Msg = broken; Msg = cmd(Cmd)),
    thread_send_message(Self, Msg),
    thread_join(Id, Status),
-   debug(mpd(notify), 'Listener exited with ~w', [Status]),
    insist(Status = exception(cmd(NextCommand))).
 
 notify_all(Subsystems) :- forall(thread(client, Id), maplist(notify(Id), Subsystems)).
+notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
