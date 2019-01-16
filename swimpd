@@ -1,11 +1,19 @@
 #!/usr/bin/env swipl
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
+
 :- use_module(prolog/swimpd/swimpd).
+:- use_module(library(fileutils), [with_output_to_file/2]).
+:- use_module(library(rcutils)).
 
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
 
-main([A1]) :- atom_number(A1, Port), mpd_init, start_mpd(Port, [allow(local)]), start_gst_thread(50).
-:- current_prolog_flag(argv, Argv), main(Argv).
+save_state :- 
+   get_time(Now), format_time(string(Fn), "state-%FT%T.pl", Now),
+   with_output_to_file(Fn, listing(mpd_state:state)).
+
+start([A1]) :- atom_number(A1, Port), start_mpd(Port, [allow(local)]), start_gst_thread(50).
+main :- confirm_on_halt, mpd_init, current_prolog_flag(argv, Argv), start(Argv).
+:- (flag(swimpd_load_count, 0, 1) -> main; true).
 % vim: ft=prolog
