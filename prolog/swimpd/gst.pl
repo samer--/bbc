@@ -41,7 +41,7 @@ gst_message(format, [format(Rate:Fmt:Ch)]) --> split_on_colon([nat(Rate), sample
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
-set_volume(V) :- FV is V/100.0, send(fmt('volume ~5f', [FV])).
+set_volume(V) :- FV is (V/100.0)^2, send(fmt('volume ~5f', [FV])).
 gst_volume(V) :- send(fmt('volume ~f',V)).
 gst_uri(URI) :- send(fmt('uri ~s',[URI])).
 send(P) :- gst(_,In), phrase(P, Codes), format(In, '~s\n', [Codes]).
@@ -52,11 +52,11 @@ start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
-gst_audio_info(Id, au(Dur, _Elap, _BR, _Fmt), au(FDur, Elap, BR, Fmt)) :-
+gst_audio_info(Id, au(Dur, Elap1, BR1, Fmt1), au(FDur, Elap, BR, Fmt)) :-
    maplist(send, ["bitrate", "format", "position"]), FDur is float(Dur),
-   thread_get_message(Id, bitrate(BR), [timeout(1)]),
-   thread_get_message(Id, format(Fmt), [timeout(1)]),
-   thread_get_message(Id, position(Elap), [timeout(1)]).
+   (thread_get_message(Id, bitrate(BR), [timeout(1)]) -> true; BR=BR1),
+   (thread_get_message(Id, format(Fmt), [timeout(1)]) -> true; Fmt=Fmt1),
+   (thread_get_message(Id, position(Elap), [timeout(1)]) -> true; Elap=Elap1).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave), send("close").
