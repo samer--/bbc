@@ -34,7 +34,10 @@
    add arbitrary PID (works for TV too!)
    state persistence
    add 'shelf' for keeping programmes
-   fix for ncmpcpp, MPDroid, Theremin (artist?)
+   Clients: fix for MPDroid
+   fix failed status after play (gst player has no caps yet?)
+   swap client thread roles while idle
+   get format once on play; get bitrate notifications instead of polling
  */
 
 :- dynamic queue/2.
@@ -96,8 +99,8 @@ pausex(nothing, play, pause).
 
 seekcur(rel(DPos)) --> {gst:send(fmt("seekrel ~f", [DPos]))}. % FIXME: No!!
 seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
-seekid(Id, PPos) --> current_id(Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
-current_id(Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
+seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
+current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
 get_audio_info(Au1, Au2) :- gst(Id, _), !, gst_audio_info(Id, Au1, Au2).
 get_audio_info(Au, Au).
@@ -151,7 +154,6 @@ fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, 
 term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(mpd_protocol:command(H,T) --> Body, Rule).
 
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
-command(ping, [])     :-> [].
 command(setvol, Tail) :-> {phrase(quoted(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
 command(add, Tail)    :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
@@ -164,12 +166,11 @@ command(stop, [])     :-> {updating_play_state(stop)}.
 command(previous, []) :-> {updating_play_state(step(play, prev))}.
 command(next, [])     :-> {updating_play_state(step(play, next))}.
 command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
-command(seekid, Tail) :-> {phrase((quoted(num(Id)), " ", quoted(num(PPos))), Tail), updating_play_state(seekid(Id, PPos))}.
+command(seek, Tail)   :-> {phrase((quoted(num(Pos)), " ", quoted(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
+command(seekid, Tail) :-> {phrase((quoted(num(Id)), " ", quoted(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
 command(seekcur, Tail) :-> {phrase(quoted(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(list, _)      :-> "Music\nSpoken\nNews\n".
-command(listplaylists, _) :-> [].
 command(stats, [])    :->
    {uptime(T), state(dbtime, D), thread_self(Id), thread_statistics(Id, Stats),
     print_term(Stats, [output(user_error)])},
@@ -180,6 +181,10 @@ command(playlistinfo, Tail) :-> {phrase(maybe(quoted(range), R), Tail)}, reading
 command(playlistid, [])  :-> reading_state(queue, reading_queue(playlistinfo(nothing))).
 command(plchanges, Tail) :-> {phrase(quoted(num(V)), Tail)}, reading_state(queue, reading_queue(plchanges(V))).
 command(currentsong, []) :-> reading_state(queue, reading_queue(currentsong)).
+command(listplaylists, _) :-> [].
+command(list, _)      :-> [].
+command(decoders, []) :-> [].
+command(ping, [])     :-> [].
 
 update(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
 update_and_notify(Path) :- update(Path), notify_all([database]).
@@ -274,7 +279,6 @@ uptime(T) :- get_time(Now), state(start_time, Then), T is Now - Then.
 
 % --- command and reply DCGs -----
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
-
 seek_spec(abs(T)) --> decimal // num(T).
 seek_spec(rel(T)) --> (any(`+-`), decimal) // num(T).
 seek_dir(M) --> "+", {M=fwd}; "-", {M=bwd}.
