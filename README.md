@@ -6,6 +6,13 @@ and playing it without having to go through the BBC website (iPlayer or Sounds) 
 a web-browser. This means they can be used on a headless device such as you might 
 have connected to a hi-fi. Still, there are some usable bits:
 
+## swimpd - Music Player Daemon server for BBC radio 
+This is MPD server written in Prolog, which provides streaming access to all
+the programmes in the current BBC radio schedules, as well as the live radio 
+streams. Audio is handled using GStreamer, via a slave process written in Python.
+Work in progress, but works ok with mpc and ncmpc, okish with ncmpcpp, not so good 
+with Theremin and not at all with MPDroid.
+
 ## bbc.py - Python script to get media stream URL from programme id
 
 Run `./bbc.py -h` for help. Writes stream URLs for a given programme id (PID)
