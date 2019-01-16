@@ -76,11 +76,9 @@ title_contains(Sub, E) :-
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
    atom_contains(TLower, SubLower).
 
-play_on_accept(E, Query) :- on_accept(Query, play_entry(_, E)).
 play_entry(Fmt, E) :- player(Player), play_entry(Player, Fmt, E).
 play_entry(Player, Fmt, E) :-
-   maplist(xpath(E), [pid(text), title(text)], [PID, Title]),
-   xpath(E, links/link(@transferformat=Fmt, text), URL),
+   maplist(prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
    format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
    play_url(Player, URL).
 
