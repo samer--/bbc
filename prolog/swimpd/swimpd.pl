@@ -34,7 +34,6 @@
    add arbitrary PID (works for TV too!)
    state persistence
    add 'shelf' for keeping programmes
-   Clients: fix for MPDroid
    fix failed status after play (gst player has no caps yet?)
    swap client thread roles while idle
    get format once on play; get bitrate notifications instead of polling
