@@ -167,29 +167,29 @@ fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, 
 term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(mpd_protocol:command(H,T) --> Body, Rule).
 
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
-command(setvol, Tail) :-> {phrase(quoted(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
+command(setvol, Tail) :-> {phrase(a(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
-command(add, Tail)    :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
-command(addid, Tail)  :-> {phrase(quoted(path(Path)), Tail), updating_queue_state(\< addid(Path, just(Id)))}, report('Id'-Id).
-command(delete, Tail) :-> {phrase(maybe(quoted(range), R), Tail), updating_queue_state(delete_range(R, _))}.
-command(deleteid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
-command(playid, Tail) :-> {phrase(quoted(num(Id)), Tail), updating_play_state(play(_, Id))}.
-command(play, Tail)   :-> {phrase(maybe(quoted(num), N), Tail), updating_play_state(play(N))}.
+command(add, Tail)    :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
+command(addid, Tail)  :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< addid(Path, just(Id)))}, report('Id'-Id).
+command(delete, Tail) :-> {phrase(maybe(a(range), R), Tail), updating_queue_state(delete_range(R, _))}.
+command(deleteid, Tail) :-> {phrase(a(num(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
+command(playid, Tail) :-> {phrase(a(num(Id)), Tail), updating_play_state(play(_, Id))}.
+command(play, Tail)   :-> {phrase(maybe(a(num), N), Tail), updating_play_state(play(N))}.
 command(stop, [])     :-> {updating_play_state(stop)}.
 command(previous, []) :-> {updating_play_state(step(play, prev))}.
 command(next, [])     :-> {updating_play_state(step(play, next))}.
-command(pause, Tail)  :-> {phrase(maybe(quoted(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
-command(seek, Tail)   :-> {phrase((quoted(num(Pos)), " ", quoted(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
-command(seekid, Tail) :-> {phrase((quoted(num(Id)), " ", quoted(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
-command(seekcur, Tail) :-> {phrase(quoted(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
+command(pause, Tail)  :-> {phrase(maybe(a(num), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
+command(seek, Tail)   :-> {phrase((a(num(Pos)), " ", a(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
+command(seekid, Tail) :-> {phrase((a(num(Id)), " ", a(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
+command(seekcur, Tail) :-> {phrase(a(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
 command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-1, uptime-T, db_update-D]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
-command(playlistinfo, Tail) :-> {phrase(maybe(quoted(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
+command(playlistinfo, Tail) :-> {phrase(maybe(a(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
 command(playlistid, [])  :-> reading_state(queue, reading_queue(playlistinfo(nothing))).
-command(plchanges, Tail) :-> {phrase(quoted(num(V)), Tail)}, reading_state(queue, reading_queue(plchanges(V))).
+command(plchanges, Tail) :-> {phrase(a(num(V)), Tail)}, reading_state(queue, reading_queue(plchanges(V))).
 command(currentsong, []) :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, _) :-> [].
 command(list, _)      :-> [].
@@ -289,6 +289,8 @@ report_slave_state(just(State-Au)) -->
 uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
 
 % --- command and reply DCGs -----
+a(P) --> quoted(P); break(` "`) // P.
+a(P, X) --> quoted(P, X); break(` "`) // call(P, X).
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
 seek_spec(abs(T)) --> decimal // num(T).
 seek_spec(rel(T)) --> (any(`+-`), decimal) // num(T).
