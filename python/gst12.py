@@ -46,6 +46,7 @@ def signal_watch(bus): return lambda: (bus.add_signal_watch(), bus.remove_signal
 def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
 def find_cap(c): return c
+def trace(l, x): print_('%s %s' % (l, x)); return x
 def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
 ctrue = const(True)
 
@@ -68,8 +69,9 @@ def main():
              , 'device':   lambda a: ctrue(p.get_property('audio-sink').set_property('device', a[0]))
              , 'print':    lambda a: ctrue(print_(a[0]))
              }
+    def sync():     return print_('sync'), p.get_state(1000000000)
     def position(): return ns_to_s(p.query_position(_FORMAT_TIME)[1])
-    def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t))
+    def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t)), sync()
     def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), dict(common, **d)))
     player = handler({ 'close':    lambda _: loop.quit()
                      , 'stop':     lambda _: (stop(), sset('state')('stopped'))
@@ -96,7 +98,7 @@ def main():
     def go():
         with Context(io_watch(sys.stdin, GObject.IO_IN, on_input)):
             with Context(lambda: (None, stop)):
-                pause(); sset('state')('paused'); loop.run()
+                pause(); sync(); sset('state')('paused'); loop.run()
 
     top = handler({'quit': const(False), 'uri': lambda a: ctrue((p.set_property('uri', a[0]), go()))})
     bus = p.get_bus()
