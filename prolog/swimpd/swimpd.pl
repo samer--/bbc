@@ -80,9 +80,10 @@ command(pause, Tail)  :-> {phrase(maybe(a(nat), X), Tail), updating_play_state(f
 command(seek, Tail)   :-> {phrase((a(nat(Pos)), " ", a(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
 command(seekid, Tail) :-> {phrase((a(pid(Id)), " ", a(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
 command(seekcur, Tail) :-> {phrase(a(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
+command(tagtypes, []) :-> foldl(report(tagtype), ['Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update_db(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(stats, [])    :-> {uptime(T), state(dbtime, D)}, foldl(report, [artists-1, uptime-T, db_update-D]).
+command(stats, [])    :-> {uptime(T), state(dbtime, D), round(D,DD)}, foldl(report, [artists-1, uptime-T, db_update-DD]).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(playlistinfo, Tail) :-> {phrase(maybe(a(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
@@ -107,7 +108,7 @@ reading_queue(Action, _-Q) --> call(Action, Q).
 uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
 
 update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
-update_and_notify(Path) :- update_db(Path), get_time(Now), round(Now, T), set_state(dbtime, T), notify_all([database]).
+update_and_notify(Path) :- update_db(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
 
 enact(volume, [], _, _) :- !.
 enact(volume, [mixer], _, V) :- !, set_volume(V).
