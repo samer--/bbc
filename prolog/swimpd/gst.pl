@@ -8,7 +8,7 @@
 :- use_module(asyncu, [spawn/1, setup_stream/2]).
 :- use_module(tools,  [parse_head//2, num//1, nat//1, maybe/2]).
 
-:- multifile spec_url/2, notify_eos/0.
+:- multifile notify_eos/0, id_wants_bookmark/1.
 
 with_gst(P, Status) :-
    setup_call_cleanup(start_gst(PID, IO),
@@ -44,7 +44,7 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 set_volume(V) :- FV is (V/100.0)^1.5, send(fmt('volume ~5f', [FV])).
 gst_volume(V) :- send(fmt('volume ~f',V)).
 gst_uri(URI) :- send(fmt('uri ~s',[URI])).
-send(P) :- gst(_,In), phrase(P, Codes), format(In, '~s\n', [Codes]).
+send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, '~s\n', [Codes]).
 recv(M) :- gst(Id,_), thread_get_message(Id, M, [timeout(2)]).
 
 start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
@@ -83,14 +83,19 @@ enact_slave_change(_,          just(S1-_Au1), just(S2-_Au2)) :-
 maybe_play(P, _) :- P=play -> send("resume"); true.
 stop_if_playing(SongsPos, _) :- save_position(SongsPos).
 cue_and_maybe_play(Songs, Pos, P-Au) :-
-   nth0(Pos, Songs, song(_, E, _)), spec_url(E, URL),
+   nth0(Pos, Songs, song(_, URL, _)),
    send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
    maybe_play(P, Au).
 
 save_position(Songs-Pos) :-
-   send("position"), recv(position(PPos)),
-   nth0(Pos, Songs, song(Id, _, _)), set_state(position(Id), PPos).
+   nth0(Pos, Songs, song(Id, _, _)),
+   (  id_wants_bookmark(Id)
+   -> debug(mpd(gst), 'Saving position for ~w', [Id]),
+      send("position"), recv(position(PPos)),
+      set_state(position(Id), PPos)
+   ;  true
+   ).
 
 restore_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
