@@ -59,30 +59,30 @@ gst_audio_info(Id, Elap1/Dur1, au(Dur1, Elap, BR, Fmt)) :-
    (thread_get_message(Id, position(Elap), [timeout(1)]) -> true; Elap=Elap1).
 
 enact_player_change(_, nothing, nothing).
-enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave), send("close").
-enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- maybe(cue_and_maybe_play(Songs, Pos), Slave).
+enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
+enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- maybe(cue_and_maybe_play(Songs-Pos), Slave).
 enact_player_change(SongsPair, just(PS1), just(PS2)) :- enact_ps_change(SongsPair, PS1, PS2).
 
 enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
    nth0(Pos1, Songs1, song(Id1, _, _)),
    nth0(Pos2, Songs2, song(Id2, _, _)),
    (  Id1 \= Id2
-   -> maybe(stop_if_playing(Songs1-Pos1), Sl1), send("close"),
-      maybe(cue_and_maybe_play(Songs2, Pos2), Sl2)
+   -> maybe(stop_if_playing(Songs1-Pos1), Sl1),
+      maybe(cue_and_maybe_play(Songs2-Pos2), Sl2)
    ;  enact_slave_change((Songs1-Pos1)-(Songs2-Pos2), Sl1, Sl2)
    ).
 
 enact_slave_change(_,          nothing, nothing) :- !.
-enact_slave_change(SongsPos-_, just(_), nothing) :- !, save_position(SongsPos), send("stop").
-enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, send("pause"), restore_position(SongsPos), maybe_play(S, Au).
+enact_slave_change(SongsPos-_, just(_), nothing) :- !, save_position(SongsPos), send("close").
+enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, cue_and_maybe_play(SongsPos, S-Au).
 enact_slave_change(_,          just(S1-_), just(S2-_)) :-
    (  S1-S2 = play-pause -> send("pause")
    ;  S1-S2 = pause-play -> send("resume")
    ;  true
    ).
 maybe_play(P, _) :- P=play -> send("resume"); true.
-stop_if_playing(SongsPos, _) :- save_position(SongsPos).
-cue_and_maybe_play(Songs, Pos, P-Au) :-
+stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("close").
+cue_and_maybe_play(Songs-Pos, P-Au) :-
    nth0(Pos, Songs, song(_, URL, _)),
    send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
