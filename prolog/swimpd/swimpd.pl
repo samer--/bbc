@@ -1,14 +1,12 @@
 :- module(swimpd, [mpd_init/0, restore_state/1]).
 
-:- use_module(library(socket)).
-:- use_module(library(data/pair)).
 :- use_module(library(dcg_core)).
-:- use_module(library(dcg_codes)).
 :- use_module(library(dcg_pair)).
-:- use_module(library(snobol)).
-:- use_module(library(listutils)).
+:- use_module(library(dcg_codes), [fmt//2]).
+:- use_module(library(data/pair), [fsnd/3]).
+:- use_module(library(snobol),    [any//1, notany//1, break//1]).
+:- use_module(library(insist),    [insist/1]).
 :- use_module(library(callutils), [true2/2, bt_call/2]).
-:- use_module(library(insist), [insist/1]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
 :- use_module(protocol, [notify_all/1]).
