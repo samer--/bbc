@@ -38,7 +38,7 @@ execute(idle, Tail) :- !,
 execute(Cmd, T) :- execute1(0-'', Cmd, T).
 
 idle_filter(nonvar) --> [].
-idle_filter(in(Subsystems)) --> seqmap_with_sep(" ", quoted(atom), Subsystems).
+idle_filter(in(Subsystems)) --> " ", seqmap_with_sep(" ", quoted(atom), Subsystems).
 
 execute1(Ref, Cmd, T) :-
    (  catch(reply_phrase(command(Cmd, T)), mpd_err(Err), throw(mpd_ack(ack(Ref, Err)))) -> true

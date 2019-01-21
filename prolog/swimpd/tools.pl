@@ -3,12 +3,9 @@
 
 :- use_module(library(dcg_core), [(//)//2, list//1]).
 :- use_module(library(dcg_codes), [esc//2, ctype//1, fmt//2]).
-:- use_module(library(snobol), [notany//1]).
-:- use_module(library(dcg/basics), [string_without//2]).
+:- use_module(library(snobol), [notany//1, break//1]).
 
-parse_head(Head, Tail) --> string_without(` `, H), tail(Tail), {atom_codes(Head, H)}.
-tail([]) --> [].
-tail(Tail) --> " ", list(Tail).
+parse_head(Head, Tail) --> break(` `) // list(H), list(Tail), {atom_codes(Head, H)}.
 
 report(Name-Value) --> report(Name, Value).
 report(Name, Value) --> fmt('~w: ~w\n', [Name, Value]).

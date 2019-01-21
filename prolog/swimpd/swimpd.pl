@@ -13,8 +13,8 @@
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1]).
 :- use_module(asyncu,   [thread/2, registered/2, spawn/1, setup_stream/2]).
 :- use_module(gst,      [gst_audio_info/3, enact_player_change/3, gst/2, set_volume/1]).
-:- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, parse_head//2, nat//1, decimal//0, fnth/5,
-                         flip/4, report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3]).
+:- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
+                         report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3]).
 
 /* <module> MPD server for BBC radio programmes.
 
@@ -64,14 +64,14 @@ term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(setvol, Tail) :-> {phrase(a(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
-command(add, Tail)    :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< addid(Path, _))}.
-command(addid, Tail)  :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< addid(Path, just(Id)))}, report('Id'-Id).
+command(add, Tail)    :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< \< addid(Path, _))}.
+command(addid, Tail)  :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< \< addid(Path, just(Id)))}, report('Id'-Id).
 command(delete, Tail) :-> {phrase(maybe(a(range), R), Tail), updating_queue_state(delete_range(R, _))}.
 command(deleteid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
-command(move, Tail)   :-> {phrase((a(nat(P1)), " ", a(nat(P2))), Tail), reordering_queue(move(P1, P2))}.
-command(moveid, Tail) :-> {phrase((a(pid(I1)), " ", a(nat(P2))), Tail), reordering_queue((id_pos(I1,P1), move(P1, P2)))}.
-command(swap, Tail)   :-> {phrase((a(nat(P1)), " ", a(nat(P2))), Tail), reordering_queue(swap(P1, P2))}.
-command(swapid, Tail) :-> {phrase((a(pid(I1)), " ", a(pid(I2))), Tail), reordering_queue(swap_id(I1, I2))}.
+command(move, Tail)   :-> {phrase((a(nat(P1)), a(nat(P2))), Tail), reordering_queue(move(P1, P2))}.
+command(moveid, Tail) :-> {phrase((a(pid(I1)), a(nat(P2))), Tail), reordering_queue((id_pos(I1,P1), move(P1, P2)))}.
+command(swap, Tail)   :-> {phrase((a(nat(P1)), a(nat(P2))), Tail), reordering_queue(swap(P1, P2))}.
+command(swapid, Tail) :-> {phrase((a(pid(I1)), a(pid(I2))), Tail), reordering_queue(swap_id(I1, I2))}.
 command(shuffle, Tail):-> {phrase(maybe(a(range), R), Tail), reordering_queue(shuffle(R))}.
 command(playid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_play_state(play(_, Id))}.
 command(play, Tail)   :-> {phrase(maybe(a(nat), N), Tail), updating_play_state(play(N))}.
@@ -79,8 +79,8 @@ command(stop, [])     :-> {updating_play_state(stop)}.
 command(previous, []) :-> {updating_play_state(step(play, prev))}.
 command(next, [])     :-> {updating_play_state(step(play, next))}.
 command(pause, Tail)  :-> {phrase(maybe(a(nat), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
-command(seek, Tail)   :-> {phrase((a(nat(Pos)), " ", a(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
-command(seekid, Tail) :-> {phrase((a(pid(Id)), " ", a(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
+command(seek, Tail)   :-> {phrase((a(nat(Pos)), a(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
+command(seekid, Tail) :-> {phrase((a(pid(Id)), a(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
 command(seekcur, Tail) :-> {phrase(a(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
 command(tagtypes, []) :-> foldl(report(tagtype), ['Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update_db(Path).
@@ -221,8 +221,8 @@ report_slave_state(just(State-Prog)) -->
 maybe_report(K-V) --> maybe(report(K), V).
 
 % --- command and reply DCGs -----
-a(P) --> quoted(P); break(` "`) // P.
-a(P, X) --> quoted(P, X); break(` "`) // call(P, X).
+a(P) --> " ", (quoted(P); break(` "`) // P).
+a(P, X) --> " ", (quoted(P, X); break(` "`) // call(P, X)).
 pid(Id) --> nat(N), {id_pid(N, Id)}.
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
 seek_spec(abs(T)) --> decimal // num(T).
