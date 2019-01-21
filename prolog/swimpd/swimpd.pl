@@ -41,14 +41,13 @@
    State management:
       multiple sessions
       persistence
-      Avoid further DB lookups
  */
 
 %! mpd_init is det.
 %  Set state of MPD to an empty queue with version 0, volume set to 50%, and start
 %  and db update times to now.
 mpd_init :-
-   get_time(Now),
+   get_time(Now), flag(update, _, 1),
    maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 0-([]-nothing)]),
    retractall(queue(_,_)), assert(queue(0, [])).
 
@@ -112,7 +111,8 @@ update_and_notify(Path) :- update_db(Path), get_time(Now), set_state(dbtime, Now
 
 enact(volume, [], _, _) :- !.
 enact(volume, [mixer], _, V) :- !, set_volume(V).
-enact(queue, Changes) --> {member(player, Changes)} -> \> (trans(Ss1, Ss2) <\> enact_player_change(Ss1-Ss2)); true2.
+enact(queue, Changes) --> ({member(player, Changes)} -> true2 <\> enact_; true2).
+enact_ --> trans(Ss1, Ss2) <\> enact_player_change(Ss1-Ss2).
 
 % -- playlist management --
 playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
@@ -159,9 +159,9 @@ seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]
 current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
-step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({step(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
-step(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
-step(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
+step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({upd_pos(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
+upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
+upd_pos(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
 
 play(nothing) --> get(_-just(ps(Pos, _))), !, play(Pos, _).
 play(nothing) --> play(0, _).
