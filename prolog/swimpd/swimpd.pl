@@ -147,7 +147,7 @@ update_pos(Pos, ps(PPos1, Slave), ps(PPos2, Slave)) :-
    (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
 
 % -- player management --
-pause(X, ps(C, just(P1 - Au)), ps(C, just(P2 - Au))) :- pausex(X, P1, P2).
+pause(X, ps(C, just(P1 - Prog)), ps(C, just(P2 - Prog))) :- pausex(X, P1, P2).
 pausex(just(1), _, pause).
 pausex(just(0), _, play).
 pausex(nothing, pause, play).
@@ -157,9 +157,6 @@ seekcur(rel(DPos)) --> {gst:send(fmt("seekrel ~f", [DPos]))}. % FIXME: No!!
 seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
-
-get_audio_info(Au1, Au2) :- gst(Id, _), !, gst_audio_info(Id, Au1, Au2).
-get_audio_info(Au, Au).
 
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({step(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
@@ -173,13 +170,12 @@ play(just(Pos)) --> play(Pos, _).
 play(Pos, Id) --> play(play, Pos, Id).
 play(Op, Pos, Id, Songs-PS1, Songs-PS2) :-
    nth0(Pos, Songs, song(Id, _, Tags)),
-   (member(duration-D, Tags) -> true; D=0.0),
-   update_play_state(Op, Pos, D, PS1, PS2).
+   (member(duration-Dur, Tags) -> true; Dur=0.0),
+   update_play_state(Op, Pos, Dur, PS1, PS2).
 
-update_play_state(play, Pos, D, _, just(ps(Pos, just(play-Au)))) :- dur_audio(D, Au).
+update_play_state(play, Pos, Dur, _, just(ps(Pos, just(play-0.0/Dur)))).
 update_play_state(keep, Pos, I, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(update_slave(I), Sl1, Sl2).
-update_slave(Dur, P-_, P-Au) :- dur_audio(Dur, Au).
-dur_audio(Dur, au(Dur, 0.0, 320, 48000:f:2)).
+update_slave(Dur, P-_, P-0.0/Dur).
 
 gst:id_wants_bookmark(PID) :- is_programme(PID).
 gst:notify_eos :- updating_play_state(stop).
@@ -200,9 +196,14 @@ report_nth_song(Songs, K1, K2, Pos) -->
    {nth0(Pos, Songs, song(PID, _, _)), pid_id(PID, Id)},
    foldl(report, [K1-Pos, K2-Id]).
 report_slave_state(nothing) --> report(state-stop).
-report_slave_state(just(State-Au)) -->
-   {get_audio_info(Au, au(Dur, Elap, BR, Fmt)), format(string(Time), '~0f:~0f', [Elap, Dur])},
-   foldl(report, [state-State, time-Time, elapsed-Elap, duration-Dur, bitrate-BR, audio-Fmt]).
+report_slave_state(just(State-Prog)) -->
+   {  gst(Id, _), gst_audio_info(Id, Prog, au(Dur2, Elap2, BR, Fmt)) -> true
+   ;  Elap2/Dur2=Prog, BR=nothing, Fmt=nothing
+   },
+   {format(string(Time), '~0f:~0f', [Elap2, Dur2])},
+   foldl(report, [state-State, time-Time, elapsed-Elap2, duration-Dur2]),
+   foldl(maybe_report, [bitrate-BR, audio-Fmt]).
+maybe_report(K-V) --> maybe(report(K), V).
 
 % --- command and reply DCGs -----
 a(P) --> quoted(P); break(` "`) // P.

@@ -52,10 +52,10 @@ start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
-gst_audio_info(Id, au(Dur, Elap1, BR1, Fmt1), au(FDur, Elap, BR, Fmt)) :-
-   maplist(send, ["bitrate", "format", "position"]), FDur is float(Dur),
-   (thread_get_message(Id, bitrate(BR), [timeout(1)]) -> true; BR=BR1),
-   (thread_get_message(Id, format(Fmt), [timeout(1)]) -> true; Fmt=Fmt1),
+gst_audio_info(Id, Elap1/Dur1, au(Dur1, Elap, BR, Fmt)) :-
+   maplist(send, ["bitrate", "format", "position"]),
+   (thread_get_message(Id, bitrate(R), [timeout(1)]) -> BR=just(R); BR=nothing),
+   (thread_get_message(Id, format(F), [timeout(1)]) -> Fmt=just(F); Fmt=nothing),
    (thread_get_message(Id, position(Elap), [timeout(1)]) -> true; Elap=Elap1).
 
 enact_player_change(_, nothing, nothing).
@@ -75,7 +75,7 @@ enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
 enact_slave_change(_,          nothing, nothing) :- !.
 enact_slave_change(SongsPos-_, just(_), nothing) :- !, save_position(SongsPos), send("stop").
 enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, send("pause"), restore_position(SongsPos), maybe_play(S, Au).
-enact_slave_change(_,          just(S1-_Au1), just(S2-_Au2)) :-
+enact_slave_change(_,          just(S1-_), just(S2-_)) :-
    (  S1-S2 = play-pause -> send("pause")
    ;  S1-S2 = pause-play -> send("resume")
    ;  true
