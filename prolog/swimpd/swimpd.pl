@@ -13,7 +13,7 @@
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1]).
 :- use_module(asyncu,   [thread/2, registered/2, spawn/1, setup_stream/2]).
 :- use_module(gst,      [gst_audio_info/3, enact_player_change/3, gst/2, set_volume/1]).
-:- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, parse_head//2, nat//1, decimal//0,
+:- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, parse_head//2, nat//1, decimal//0, fnth/5,
                          flip/4, report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3]).
 
 /* <module> MPD server for BBC radio programmes.
@@ -68,6 +68,11 @@ command(add, Tail)    :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< 
 command(addid, Tail)  :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< addid(Path, just(Id)))}, report('Id'-Id).
 command(delete, Tail) :-> {phrase(maybe(a(range), R), Tail), updating_queue_state(delete_range(R, _))}.
 command(deleteid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
+command(move, Tail)   :-> {phrase((a(nat(P1)), " ", a(nat(P2))), Tail), reordering_queue(move(P1, P2))}.
+command(moveid, Tail) :-> {phrase((a(pid(I1)), " ", a(nat(P2))), Tail), reordering_queue((id_pos(I1,P1), move(P1, P2)))}.
+command(swap, Tail)   :-> {phrase((a(nat(P1)), " ", a(nat(P2))), Tail), reordering_queue(swap(P1, P2))}.
+command(swapid, Tail) :-> {phrase((a(pid(I1)), " ", a(pid(I2))), Tail), reordering_queue(swap_id(I1, I2))}.
+command(shuffle, Tail):-> {phrase(maybe(a(range), R), Tail), reordering_queue(shuffle(R))}.
 command(playid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_play_state(play(_, Id))}.
 command(play, Tail)   :-> {phrase(maybe(a(nat), N), Tail), updating_play_state(play(N))}.
 command(stop, [])     :-> {updating_play_state(stop)}.
@@ -98,6 +103,7 @@ upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K,
 
 updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
 updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), set_queue(V, Songs).
+reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
 
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
@@ -143,6 +149,17 @@ delete(Pos, Id) -->
 
 update_pos(Pos, ps(PPos1, Slave), ps(PPos2, Slave)) :-
    (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
+
+preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
+update_pos(Songs1, Songs2, ps(Pos1, Sl), ps(Pos2, Sl)) :-
+   nth0(Pos1, Songs1, song(Id, _, _)),
+   nth0(Pos2, Songs2, song(Id, _, _)).
+
+shuffle(nothing) --> random_permutation.
+swap_id(Id1, Id2) --> foldl(id_pos, [Id1, Id2], [P1, P2]), swap(P1, P2).
+swap(P1, P2) --> fnth(P1, Song1, Song2), fnth(P2, Song2, Song1).
+move(P1, P2, Songs1, Songs2) :- select_nth(P1, Song, Songs1, Songs3), select_nth(P2, Song, Songs2, Songs3).
+id_pos(Id, Pos, Songs, Songs) :- nth0(Pos, Songs, song(Id, _, _)).
 
 % -- player management --
 pause(X, ps(C, just(P1 - Prog)), ps(C, just(P2 - Prog))) :- pausex(X, P1, P2).
