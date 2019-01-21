@@ -41,7 +41,7 @@ gst_message(format, [format(Rate:Fmt:Ch)]) --> split_on_colon([nat(Rate), sample
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
-set_volume(V) :- FV is (V/100.0)^1.5, send(fmt('volume ~5f', [FV])).
+set_volume(V) :- FV is (V/100.0)^1.75, send(fmt('volume ~5f', [FV])).
 gst_volume(V) :- send(fmt('volume ~f',V)).
 gst_uri(URI) :- send(fmt('uri ~s',[URI])).
 send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, '~s\n', [Codes]).
