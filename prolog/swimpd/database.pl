@@ -15,7 +15,6 @@
 
 :- use_module(library(xpath)).
 :- use_module(library(memo)).
-:- use_module(library(data/pair)).
 :- use_module(library(dcg_core), [maybe/3]).
 :- use_module(asyncu, [spawn/1]).
 :- use_module(tools,  [report//1, report//2, maybe/2, maybe//2]).
@@ -31,14 +30,14 @@ is_programme(PID) :- \+service(PID, _, _).
 % --- adding to playlist by path  ---
 addid([LongName], nothing) -->
    {longname_service(LongName, S), findall(E, service_entry(S, E), Entries)},
-   ffst(foldl(add(LongName), Entries)).
+   foldl(add(LongName), Entries).
 
 addid([LongName, PID], just(Id)) -->
    {longname_service(LongName, S), service_entry(S, E), prop(E, pid(PID)), pid_id(PID, Id)},
-   ffst(add(LongName, E)).
+   add(LongName, E).
 
-addid(['Live Radio'], nothing) --> {all_services(Services)}, ffst(foldl(add_live, Services)).
-addid(['Live Radio', LongName], just(Id)) --> {service(S, _, LongName), pid_id(S, Id)}, ffst(add_live(S-LongName)).
+addid(['Live Radio'], nothing) --> {all_services(Services)}, foldl(add_live, Services).
+addid(['Live Radio', LongName], just(Id)) --> {service(S, _, LongName), pid_id(S, Id)}, add_live(S-LongName).
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), service_live_url(S, URL)}, add(song(S, URL, Tags)).
 add(ServiceName, E) --> {entry_tags(ServiceName, E, PID, Tags, []), entry_xurl(redir(dash), E, _-URL)}, add(song(PID, URL, Tags)).
