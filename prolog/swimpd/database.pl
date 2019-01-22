@@ -39,9 +39,8 @@ addid([LongName, PID], just(Id)) -->
 addid(['Live Radio'], nothing) --> {all_services(Services)}, foldl(add_live, Services).
 addid(['Live Radio', LongName], just(Id)) --> {service(S, _, LongName), pid_id(S, Id)}, add_live(S-LongName).
 
-add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), service_live_url(S, URL)}, add(song(S, URL, Tags)).
-add(ServiceName, E) --> {entry_tags(ServiceName, E, PID, Tags, []), entry_xurl(redir(dash), E, _-URL)}, add(song(PID, URL, Tags)).
-add(S, Songs1, Songs2) :- append(Songs1, [S], Songs2).
+add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), service_live_url(S, URL)}, [song(S, URL, Tags)].
+add(LongName, E) --> {entry_tags(LongName, E, PID, Tags, []), entry_xurl(redir(dash), E, _-URL)}, [song(PID, URL, Tags)].
 
 % --- query db contents ---
 lsinfo([]) -->

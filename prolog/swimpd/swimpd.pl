@@ -64,8 +64,8 @@ term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(setvol, Tail) :-> {phrase(a(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
-command(add, Tail)    :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< \< addid(Path, _))}.
-command(addid, Tail)  :-> {phrase(a(path(Path)), Tail), updating_queue_state(\< \< addid(Path, just(Id)))}, report('Id'-Id).
+command(add, Tail)    :-> {phrase(a(path(Path)), Tail), add_at(nothing, Path, _)}.
+command(addid, Tail)  :-> {phrase((a(path(Path)), maybe(a(nat), Pos)), Tail), add_at(Pos, Path, just(Id))}, report('Id'-Id).
 command(delete, Tail) :-> {phrase(maybe(a(range), R), Tail), updating_queue_state(delete_range(R, _))}.
 command(deleteid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
 command(move, Tail)   :-> {phrase((a(nat(P1)), a(nat(P2))), Tail), reordering_queue(move(P1, P2))}.
@@ -103,8 +103,10 @@ upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K,
 
 updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
 updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), set_queue(V, Songs).
-reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
+
+reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
+preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
 reading_queue(Action, _-Q) --> call(Action, Q).
@@ -135,6 +137,15 @@ currentsong(Songs, ps(Pos, _)) --> {nth0(Pos, Songs, Song)}, report_song_info(Po
 
 report_song_info(Pos-song(PID, _, Tags)) --> {pid_id(PID, Id)}, foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
 
+add_at(nothing, Path, Id) :- updating_queue_state(\< \< add_at_end(addid(Path, Id))).
+add_at(just(Pos), Path, Id) :- reordering_queue(insert_at(Pos, addid(Path, Id))).
+add_at_end(P, Songs1, Songs2) :- phrase((list(Songs1), P), Songs2).
+
+copy --> [X] <\> [X].
+insert_at(Pos, P, Songs1, Songs2) :-
+   rep(Pos, copy, Songs1-Songs2, Suffix-PrefixT),
+   phrase(P, PrefixT, Suffix).
+
 clear --> \< trans(Q, ([]-nothing)), \> player_if_queue_playing(Q).
 player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
 player_if_playstate_playing(_) --> [player].
@@ -150,7 +161,6 @@ delete(Pos, Id) -->
 update_pos(Pos, ps(PPos1, Slave), ps(PPos2, Slave)) :-
    (PPos1 < Pos -> PPos1 = PPos2; PPos1 >= Pos, succ(PPos2, PPos1)).
 
-preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 update_pos(Songs1, Songs2, ps(Pos1, Sl), ps(Pos2, Sl)) :-
    nth0(Pos1, Songs1, song(Id, _, _)),
    nth0(Pos2, Songs2, song(Id, _, _)).
@@ -227,7 +237,7 @@ pid(Id) --> nat(N), {id_pid(N, Id)}.
 range(N:M) --> nat(N), (":", nat(M); {succ(N,M)}).
 seek_spec(abs(T)) --> decimal // num(T).
 seek_spec(rel(T)) --> (any(`+-`), decimal) // num(T).
-maybe_quoted_path(Path) --> {Path=[]}; quoted(path(Path)).
+maybe_quoted_path(Path) --> {Path=[]}; " ", quoted(path(Path)).
 path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
 path_component(Dir) --> +(notany(`/`)) // atom(Dir).
