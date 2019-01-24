@@ -29,7 +29,7 @@ uget(Head, Result) :-
    format(string(URL), Pattern, Args),
    get_as(Fmt, URL, Result).
 
-atom_contains(A,Sub) :- sub_atom(A, _, _, _, Sub).
+atom_contains(A,Sub) :- once(sub_atom(A, _, _, _, Sub)).
 player(gst123).
 player('gst-play-1.0').
 
@@ -43,6 +43,7 @@ service(bbc_6music, '6Music', 'BBC 6 Music').
 service(bbc_world_service, 'World', 'BBC World Service').
 
 service_live_url(S, URL) :-
+   service(S, _, _),
    format(string(URL), 'http://a.files.bbci.co.uk/media/live/manifesto/audio/simulcast/dash/uk/dash_full/ak/~s.mpd', [S]).
 
 mediaset_format(F) :- member(F, [json, xml, pls]).
@@ -61,8 +62,10 @@ time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [S
 service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
 schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
-:- volatile_memo pid_playlist(+atom, -dict).
-pid_playlist(PID, Playlist) :- uget(playlist(PID), Playlist).
+pid_version(PID, V) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions).
+version_prop(V, vpid(VPID)) :- member(I, V.smpConfig.items), atom_string(VPID, I.vpid).
+version_prop(V, duration(D)) :- member(I, V.smpConfig.items), D = I.duration.
+version_prop(V, types(V.types)).
 
 mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
 
@@ -89,6 +92,7 @@ play_url(Player, URL) :-
 
 prop(E, key(X)) :- xpath(E, key(text), X).
 prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
+prop(E, vpid(X)) :- prop(E, pid(PID)), pid_version(PID, V), version_prop(V, vpid(X)).
 prop(E, pid(X)) :- xpath(E, pid(text), X).
 prop(E, title(X)) :- xpath(E, title(text), X).
 prop(E, service(X)) :- xpath(E, service(text), X).
@@ -111,14 +115,14 @@ entry_media(MST, E, M) :-
    member(M, MS.media).
 
 entry_xurl(redir(Fmt), E, inf-HREF) :- prop(E, link(Fmt, HREF)).
-entry_xurl(best_hls, E, XURL) :-
-   aggregate(max(B, XUs), setof(XU, entry_bitrate_hls_xurl(E, B, XU), XUs), max(_, XURLs)),
-   insist(XURLs = [XURL]).
+entry_xurl(best(Fmt), E, XURL) :-
+   aggregate(max(B, XUs), setof(XU, entry_fmt_bitrate_xurl(E, Fmt, B, XU), XUs), max(_, XURLs)),
+   member(XURL, XURLs).
 
-entry_bitrate_hls_xurl(E, BR, Expiry-HREF) :-
+entry_fmt_bitrate_xurl(E, Fmt, BR, Expiry-HREF) :-
    entry_media('iptv-all', E, M), number_string(BR, M.bitrate),
-   media_connection(M, C), C >:< _{transferFormat:"hls", protocol:"http", href:HREF},
-   atom_contains(C.supplier, 'akamai'), connection_expiry(C, Expiry).
+   media_connection(M, C), C >:< _{transferFormat:Fmt, protocol:"http", href:HREF},
+   connection_expiry(C, Expiry).
 
 entry_maybe_parent(E, just(PPID-Name)) :- prop(E, parent(PPID, _, Name)), !.
 entry_maybe_parent(_, nothing).
