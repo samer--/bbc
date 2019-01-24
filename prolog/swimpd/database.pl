@@ -36,17 +36,23 @@ addid([LongName, PID], just(Id)) -->
    {longname_service(LongName, S), service_entry(S, E), prop(E, pid(PID)), pid_id(PID, Id)},
    add(LongName, E).
 
-addid(['Live Radio'], nothing) --> {all_services(Services)}, foldl(add_live, Services).
-addid(['Live Radio', LongName], just(Id)) --> {service(S, _, LongName), pid_id(S, Id)}, add_live(S-LongName).
+addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Services).
+addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
 
-add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), service_live_url(S, URL)}, [song(S, URL, Tags)].
+add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, URL, Tags)].
 add(LongName, E) --> {entry_tags(LongName, E, PID, Tags, []), entry_xurl(redir(dash), E, _-URL)}, [song(PID, URL, Tags)].
+
+live_url(S, URL) :- service_live_url(S, URL).
+live_url(resonance, 'http://stream.resonance.fm:8000/resonance').
+
+live_service(S, LongName) :- service(S, _, LongName).
+live_service(resonance, 'Resonance FM').
 
 % --- query db contents ---
 lsinfo([]) -->
    report(directory, 'Live Radio'),
    {all_services(Services)}, foldl(service_dir, Services).
-lsinfo(['Live Radio']) --> {all_services(Services)}, foldl(live_radio, Services).
+lsinfo(['Live Radio']) --> {live_services(Services)}, foldl(live_radio, Services).
 lsinfo([ServiceName]) -->
 	{ longname_service(ServiceName, S),
      findall(Children, service_parent_children(S, _, Children), Families),
@@ -92,5 +98,6 @@ path_file(Path, File) :- atomic_list_concat(Path, '/', File).
 update_db([]) :- forall(service(S, _, _), update_service(S)).
 update_db([ServiceName]) :- service(S, _, ServiceName), update_service(S).
 all_services(Services) :- findall(S-SLN, service(S, _, SLN), Services).
+live_services(Services) :- findall(S-SLN, live_service(S, SLN), Services).
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; update_service(S)).
 update_service(S) :- get_time(Now), log_and_succeed(time_service_schedule(Now, S, _)).
