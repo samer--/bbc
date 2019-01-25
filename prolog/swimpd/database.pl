@@ -4,7 +4,6 @@
 
    @todo
       Artist = ? channel? BBC?
-      fix parent handling: series and brand
       memoise, DB version?
       Shelf for keeping programmes
       In progress for programmes part listened to
