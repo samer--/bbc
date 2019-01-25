@@ -10,7 +10,7 @@
 %! mpd_interactor is det.
 % Run MPD client interaction using the current user_input and user_output Prolog streams.
 mpd_interactor :- writeln('OK MPD 0.20.0'), registered(client, wait_for_input).
-wait_for_input :- read_command(Cmd), handle(Cmd).
+wait_for_input :- read_command(Cmd), !, handle(Cmd).
 
 read_command(Cmd) :-
    read_line_to_codes(user_input, Cmd),
@@ -29,11 +29,11 @@ execute(command_list_ok_begin, []) :- !,  command_list(list_ok).
 execute(command_list_begin, []) :- !, command_list(silent).
 execute(noidle, []) :- !, read_command(Cmd), throw(exec(Cmd)).
 execute(idle, Tail) :- !,
-   phrase(idle_filter(Filter), Tail),
+   once(phrase(idle_filter(Filter), Tail)),
    thread_self(Self),
    stream_property(Out, alias(user_output)),
    setup_call_cleanup(thread_create(with_output_to(Out, listener(Self-Filter, [])), Id, []),
-                      read_command(Cmd), cleanup_listener(Cmd, Self,Id, NextCmd)),
+                      once(read_command(Cmd)), cleanup_listener(Cmd, Self,Id, NextCmd)),
    throw(exec(NextCmd)).
 execute(Cmd, T) :- execute1(0-'', Cmd, T).
 
