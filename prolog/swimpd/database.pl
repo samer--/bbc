@@ -7,7 +7,6 @@
       memoise, DB version?
       Shelf for keeping programmes
       Allow adding arbitrary PID
-      Try putting PID/ID in multiple places in file tree
       confirm URL is ok and try another if not.
  */
 
@@ -19,7 +18,7 @@
 :- use_module(tools,  [sort_by/3, report//1, report//2, maybe/2, maybe//2]).
 :- use_module(bbc(bbc_tools), [log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/3, time_service_schedule/3, service_schedule/2, service_live_url/2, service_entry/2,
-                            prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, service_parent_children/3]).
+                            prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3]).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -31,7 +30,7 @@ addid([Directory], nothing) --> {directory(Directory, Entries)}, foldl(add(Direc
 addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Services).
 
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
-addid(['In Progress', PID], just(Id)) --> {once(service_entry_pid(_, E, PID)), pid_id(PID, Id)}, add('In Progress', E).
+addid(['In Progress', PID], just(Id)) --> {service_entry_pid(_, E, PID), pid_id(PID, Id)}, add('In Progress', E).
 addid([LongName, PID], just(Id)) -->
    {longname_service(LongName, S), service_entry_pid(S, E, PID), pid_id(PID, Id)},
    add(LongName, E).
