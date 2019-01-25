@@ -1,6 +1,6 @@
 :- module(bbc_db, [service/1, service/3, time_service_schedule/3, service_schedule/2, service_live_url/2,
                    service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/2, play_entry/3, interval_times/3,
-                   entry_maybe_parent/2, service_parent_child/3, service_parent_children/3]).
+                   entry_maybe_parent/3, service_parent_child/3, service_parent_children/3]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -124,12 +124,12 @@ entry_fmt_bitrate_xurl(E, Fmt, BR, Expiry-HREF) :-
    media_connection(M, C), C >:< _{transferFormat:Fmt, protocol:"http", href:HREF},
    connection_expiry(C, Expiry).
 
-entry_maybe_parent(E, just(PPID-Name)) :- prop(E, parent(PPID, _, Name)), !.
-entry_maybe_parent(_, nothing).
+entry_maybe_parent(T, E, just(PPID-Name)) :- prop(E, parent(PPID, T, Name)), !.
+entry_maybe_parent(_, _, nothing).
 
 service_entry_pid_parent(Service, E, PID, Parent) :-
    service_entry(Service, E),
-   entry_maybe_parent(E, Parent),
+   entry_maybe_parent(E, _, Parent),
    prop(E, pid(PID)).
 
 service_parent_child(Service, MParent, E1) :-
