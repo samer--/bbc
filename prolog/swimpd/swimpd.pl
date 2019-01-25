@@ -10,7 +10,7 @@
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
 :- use_module(protocol, [notify_all/1]).
-:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1]).
+:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1, db_stats/1]).
 :- use_module(asyncu,   [thread/2, registered/2, spawn/1, setup_stream/2]).
 :- use_module(gst,      [gst_audio_info/3, enact_player_change/3, gst/2, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
@@ -85,7 +85,7 @@ command(seekcur, Tail) :-> {phrase(a(seek_spec(Spec)), Tail), updating_play_stat
 command(tagtypes, []) :-> foldl(report(tagtype), ['Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
 command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update_db(Path).
 command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(stats, [])    :-> {uptime(T), state(dbtime, D), round(D,DD)}, foldl(report, [artists-1, uptime-T, db_update-DD]).
+command(stats, [])    :-> {stats(Stats)}, foldl(report, Stats).
 command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(playlistinfo, Tail) :-> {phrase(maybe(a(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
@@ -112,6 +112,7 @@ reading_state(K, Action) --> {state(K, S)}, call(Action, S).
 reading_queue(Action, _-Q) --> call(Action, Q).
 uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
 
+stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), state(dbtime, D), round(D,DD), db_stats(DBStats).
 update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
 update_and_notify(Path) :- update_db(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
 
