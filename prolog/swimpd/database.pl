@@ -18,7 +18,7 @@
 :- use_module(tools,  [sort_by/3, report//1, report//2, maybe/2, maybe//2]).
 :- use_module(bbc(bbc_tools), [log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/3, time_service_schedule/3, service_schedule/2, service_live_url/2, service_entry/2,
-                            prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3]).
+                            old_service_entry/2, prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1]).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -30,7 +30,7 @@ addid([Directory], nothing) --> {directory(Directory, Entries)}, foldl(add(Direc
 addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Services).
 
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
-addid(['In Progress', PID], just(Id)) --> {service_entry_pid(_, E, PID), pid_id(PID, Id)}, add('In Progress', E).
+addid(['In Progress', PID], just(Id)) --> {old_service_entry_pid(_, E, PID), pid_id(PID, Id)}, add('In Progress', E).
 addid([LongName, PID], just(Id)) -->
    {longname_service(LongName, S), service_entry_pid(S, E, PID), pid_id(PID, Id)},
    add(LongName, E).
@@ -46,7 +46,7 @@ lsinfo(['Live Radio']) --> {live_services(Services)}, foldl(live_radio, Services
 lsinfo([Directory]) --> {directory(Directory, Items)}, foldl(programme(Directory), Items).
 
 directory('In Progress', Items) :-
-   findall(E, (state(position(PID), _), once(service_entry_pid(_, E, PID))), Items).
+   findall(E, (state(position(PID), _), once(old_service_entry_pid(_, E, PID))), Items).
 directory(ServiceName, SortedItems) :-
 	longname_service(ServiceName, S),
    findall(E, distinct(PID, service_entry_pid(S, E, PID)), Items),
@@ -103,6 +103,8 @@ db_stats([artists-1, albums-M, songs-N, db_playtime-Dur]) :-
 pid_brand_dur(PID, B, D) :- service_entry_pid(_, E, PID), entry_maybe_parent('Brand', E, B), prop(E, duration(D)).
 
 service_entry_pid(S, E, PID) :- service_entry(S, E), prop(E, pid(PID)).
+old_service_entry_pid(S, E, PID) :- old_service_entry(S, E), prop(E, pid(PID)).
+
 update_db([]) :- forall(service(S, _, _), update_service(S)).
 update_db([ServiceName]) :- service(S, _, ServiceName), update_service(S).
 all_services(Services) :- findall(S-SLN, service(S, _, SLN), Services).

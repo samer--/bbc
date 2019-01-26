@@ -1,6 +1,6 @@
 :- module(bbc_db, [service/1, service/3, time_service_schedule/3, service_schedule/2, service_live_url/2,
                    service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/2, play_entry/3, interval_times/3,
-                   entry_maybe_parent/3, service_parent_child/3, service_parent_children/3]).
+                   old_service_entry/2, entry_maybe_parent/3, service_parent_child/3, service_parent_children/3]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -73,6 +73,11 @@ entry(E) :- service_entry(_, E).
 service_entry(S, E) :-
    service_schedule(S, Schedule),
    xpath(Schedule, /schedule/entry, E).
+old_service_entry(S, E) :-
+   order_by([desc(T)], snapshot_time_service(T, S)),
+   time_service_schedule(T, S, Schedule),
+   xpath(Schedule, /schedule/entry, E).
+snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
 
 title_contains(Sub, E) :-
    xpath(E, title(text), T),
