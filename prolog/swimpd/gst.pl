@@ -52,11 +52,12 @@ start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
-gst_audio_info(Id, Elap1/Dur1, au(Dur1, Elap, BR, Fmt)) :-
-   maplist(send, ["bitrate", "format", "position"]),
+gst_audio_info(Id, Elap1/Dur1, au(Dur, Elap, BR, Fmt)) :-
+   maplist(send, ["bitrate", "format", "position", "duration"]),
    (thread_get_message(Id, bitrate(R), [timeout(1)]) -> BR=just(R); BR=nothing),
    (thread_get_message(Id, format(F), [timeout(1)]) -> Fmt=just(F); Fmt=nothing),
-   (thread_get_message(Id, position(Elap), [timeout(1)]) -> true; Elap=Elap1).
+   (thread_get_message(Id, position(Elap), [timeout(1)]) -> true; Elap=Elap1),
+   (thread_get_message(Id, duration(Dur), [timeout(1)]) -> true; Dur=Dur1).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
