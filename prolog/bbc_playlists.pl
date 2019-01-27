@@ -2,7 +2,7 @@
 :- module(bbc_playlists, [main/1, maintain_service/2, start_service_maintenance/2]).
 
 :- use_module(bbc_db).
-:- use_module(library(fileutils)).
+:- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1]).
 
 save_service_playlist(Now, Dir, Service, Expiry) :-

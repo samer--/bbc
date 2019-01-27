@@ -7,8 +7,6 @@
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_sgml_plugin)).
-:- use_module(library(lambda)).
-:- use_module(library(fileutils)).
 :- use_module(library(insist)).
 :- use_module(library(memo)).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3]).
