@@ -18,7 +18,8 @@
 :- use_module(tools,  [sort_by/3, report//1, report//2, maybe/2, maybe//2]).
 :- use_module(bbc(bbc_tools), [log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/3, time_service_schedule/3, service_schedule/2, service_live_url/2, service_entry/2,
-                            old_service_entry/2, prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1]).
+                            old_service_entry/2, prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1,
+                            version_prop/2, prog_xurl/3, pid_version/2]).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -29,6 +30,7 @@ is_programme(PID) :- \+service(PID, _, _).
 addid([Directory], nothing) --> {directory(Directory, Entries)}, foldl(add(Directory), Entries).
 addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Services).
 
+addid(['PID', PID], just(Id)) --> {pid_id(PID, Id)}, add_pid(PID).
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
 addid(['In Progress', PID], just(Id)) --> {old_service_entry_pid(_, E, PID), pid_id(PID, Id)}, add('In Progress', E).
 addid([LongName, PID], just(Id)) -->
@@ -37,6 +39,10 @@ addid([LongName, PID], just(Id)) -->
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, URL, Tags)].
 add(LongName, E) --> {entry_tags(LongName, E, PID, Tags, []), entry_xurl(redir(dash), E, _-URL)}, [song(PID, URL, Tags)].
+
+add_pid(PID) --> [song(PID, URL, [file-PID|Tags])], {pid_version(PID, V), version_url(V, URL), version_tags(V, Tags)}.
+version_tags(V, [duration-D, 'Title'-T, 'Comment'-S]) :- maplist(version_prop(V), [duration(D), title(T), summary(S)]).
+version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-URL).
 
 % --- query db contents ---
 lsinfo([]) -->

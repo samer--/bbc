@@ -62,10 +62,11 @@ time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [S
 service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
 schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
-pid_version(PID, V) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions).
-version_prop(V, vpid(VPID)) :- member(I, V.smpConfig.items), atom_string(VPID, I.vpid).
-version_prop(V, duration(D)) :- member(I, V.smpConfig.items), D = I.duration.
-version_prop(V, types(V.types)).
+pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
+version_prop(_-I, vpid(VPID)) :- atom_string(VPID, I.vpid).
+version_prop(_-I, duration(I.duration)).
+version_prop(C-_, title(C.title)).
+version_prop(C-_, summary(C.summary)).
 
 mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
 
@@ -113,20 +114,22 @@ prop(E, parent(PID, Type, Name)) :-
 media_connection(M, C) :- member(C, M.connection).
 connection_expiry(C, Expiry) :- parse_time(C.authExpires, Expiry).
 
-entry_media(MST, E, M) :-
-   prop(E, vpid(VPID)),
+vpid_media(MST, VPID, M) :-
    mediaset_type(_, MST),
    catch(mediaset(json, MST, VPID, MS), _, fail),
    member(M, MS.media).
 
-entry_xurl(redir(Fmt), E, inf-HREF) :- prop(E, link(Fmt, HREF)).
-entry_xurl(best(Fmt), E, XURL) :-
-   aggregate(max(B, XUs), setof(XU, entry_fmt_bitrate_xurl(E, Fmt, B, XU), XUs), max(_, XURLs)),
+entry_xurl(Method, E, XURL) :- prog_xurl(Method, entry(E), XURL).
+prog_xurl(redir(Fmt), entry(E), inf-HREF) :- prop(E, link(Fmt, HREF)).
+prog_xurl(best(Fmt), Prog, XURL) :-
+   aggregate(max(B, XUs), setof(XU, prog_fmt_bitrate_xurl(Prog, Fmt, B, XU), XUs), max(_, XURLs)),
    member(XURL, XURLs).
 
-entry_fmt_bitrate_xurl(E, Fmt, BR, Expiry-HREF) :-
-   entry_media('iptv-all', E, M), number_string(BR, M.bitrate),
-   media_connection(M, C), C >:< _{transferFormat:Fmt, protocol:"http", href:HREF},
+prog_fmt_bitrate_xurl(entry(E), Fmt, BR, XURL) :-
+   prop(E, vpid(VPID)), prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, XURL).
+prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, Expiry-HREF) :-
+   vpid_media('iptv-all', VPID, M), number_string(BR, M.get(bitrate)),
+   media_connection(M, C), _{transferFormat:Fmt, protocol:"http", href:HREF} :< C,
    connection_expiry(C, Expiry).
 
 entry_maybe_parent(T, E, just(PPID-Name)) :- prop(E, parent(PPID, T, Name)), !.
