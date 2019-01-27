@@ -1,7 +1,10 @@
-:- module(bbc_tools, [enum/2, on_accept/2, log_failure/1, log_and_succeed/1]).
-:- meta_predicate log_failure(0), log_and_succeed(0), on_accept(0, 0).
+:- module(bbc_tools, [enum/2, log_failure/1, log_and_succeed/1]).
+:- use_module(library(listutils),[zip/3]).
 
-on_accept(Query, Goal) :- call_cleanup((Query, Success=true), (Success=true, Goal)).
+:- meta_predicate log_failure(0), log_and_succeed(0), sort_by(2,+,-).
+
+sort_by(P, X1, X2) :- maplist(pairf(P), X1, KX1), keysort(KX1, KX2), zip(_, X2, KX2).
+pairf(P, X, Y-X) :- call(P, X, Y).
 
 log_failure(G) :- G -> true; debug(bbc, 'failed: ~p', [G]), fail.
 log_and_succeed(G) :-

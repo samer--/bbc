@@ -1,6 +1,6 @@
 :- module(bbc_db, [service/1, service/3, time_service_schedule/3, service_schedule/2, service_live_url/2,
-                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/2, play_entry/3, interval_times/3,
-                   old_service_entry/2, entry_maybe_parent/3, service_parent_child/3, service_parent_children/3]).
+                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/3, interval_times/3, prog_xurl/3,
+                   old_service_entry/2, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -11,7 +11,7 @@
 :- use_module(library(fileutils)).
 :- use_module(library(insist)).
 :- use_module(library(memo)).
-:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, on_accept/2]).
+:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3]).
 
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 
@@ -85,7 +85,6 @@ title_contains(Sub, E) :-
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
    atom_contains(TLower, SubLower).
 
-play_entry(Fmt, E) :- player(Player), play_entry(Player, Fmt, E).
 play_entry(Player, Fmt, E) :-
    maplist(prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
    format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
@@ -132,19 +131,14 @@ prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, Expiry-HREF) :-
    media_connection(M, C), _{transferFormat:Fmt, protocol:"http", href:HREF} :< C,
    connection_expiry(C, Expiry).
 
+entry_parents(E, SortedParents) :-
+   findall(T-N, prop(E, parent(_, T, N)), Parents),
+   sort_by([T-_, P] >> parent_type_priority(T, P), Parents, SortedParents).
+parent_type_priority('Brand', 1).
+parent_type_priority('Series', 2).
+
 entry_maybe_parent(T, E, just(PPID-Name)) :- prop(E, parent(PPID, T, Name)), !.
 entry_maybe_parent(_, _, nothing).
-
-service_entry_pid_parent(Service, E, PID, Parent) :-
-   service_entry(Service, E),
-   entry_maybe_parent(E, _, Parent),
-   prop(E, pid(PID)).
-
-service_parent_child(Service, MParent, E1) :-
-   setof(E, service_entry_pid_parent(Service, E, _PID, MParent), [E1|_]).
-
-service_parent_children(Service, MParent, Children) :-
-   setof(E, service_parent_child(Service, MParent, E), Children).
 
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
 user:portray(element(entry, As, Es)) :-

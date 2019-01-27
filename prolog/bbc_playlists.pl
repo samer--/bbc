@@ -8,12 +8,15 @@
 save_service_playlist(Now, Dir, Service, Expiry) :-
    InOneWeek is Now + 7*24*3600,
    debug(bbc, 'Gathering playlist for ~w...', [Service]),
-   findall(Children, service_parent_children(Service, _, Children), Families),
-   findall(XU-E, (member(Es, Families), member(E, Es), log_failure(entry_xurl(best_hls, E, XU))), Items),
+   findall(E, distinct(PID, service_entry_pid(S, E, PID)), Entries),
+   sort_by(entry_sortkey, Entries, SortedEntries),
+   findall(XU-E, (member(E, SortedEntries), log_failure(entry_xurl(best("hls"), E, XU))), Items),
    foldl(min_expiry, Items, InOneWeek, Expiry),
    format(string(FN), '~s/~s.m3u', [Dir, Service]),
    debug(bbc, 'Saving playlist for ~w to "~s"...', [Service, FN]),
    with_output_to_file(FN, (writeln('#EXTM3U'), maplist(write_playlist_item, Items))).
+
+entry_sortkey(E, k(Parents, Date)) :- prop(E, broadcast(Date)), entry_parents(E, Parents).
 
 min_expiry((inf-_)-_, E, E) :- !.
 min_expiry((X-_)-_,  E1, E2) :- E2 is min(E1, X).

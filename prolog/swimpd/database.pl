@@ -15,8 +15,8 @@
 :- use_module(library(dcg_core),  [maybe/3]).
 :- use_module(asyncu, [spawn/1]).
 :- use_module(state,  [state/2]).
-:- use_module(tools,  [sort_by/3, report//1, report//2, maybe/2, maybe//2]).
-:- use_module(bbc(bbc_tools), [log_and_succeed/1]).
+:- use_module(tools,  [report//1, report//2, maybe/2, maybe//2]).
+:- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/3, time_service_schedule/3, service_schedule/2, service_live_url/2, service_entry/2,
                             old_service_entry/2, prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1,
                             version_prop/2, prog_xurl/3, pid_version/2]).
@@ -57,15 +57,7 @@ directory(ServiceName, SortedItems) :-
 	longname_service(ServiceName, S),
    findall(E, distinct(PID, service_entry_pid(S, E, PID)), Items),
    sort_by(entry_sortkey, Items, SortedItems).
-
-entry_sortkey(E, k(SortedParents, Date)) :-
-   prop(E, broadcast(Date)),
-   findall(T-N, prop(E, parent(_, T, N)), Parents),
-   sort_by(parent_priority, Parents, SortedParents).
-
-parent_priority(T-_, P) :- type_priority(T, P).
-type_priority('Brand', 1).
-type_priority('Series', 2).
+entry_sortkey(E, k(SortedParents, Date)) :- prop(E, broadcast(Date)), entry_parents(E, SortedParents).
 
 live_radio(S-ServiceName) -->
    {live_service_tags(S-ServiceName, Tags), pid_id(S, Id)},
