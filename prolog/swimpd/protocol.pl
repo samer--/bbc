@@ -1,4 +1,4 @@
-:- module(mpd_protocol, [mpd_interactor/0, notify_all/1]).
+:- module(mpd_protocol, [mpd_interactor/0, execute/2, notify_all/1]).
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3]).
