@@ -124,9 +124,10 @@ vpid_media(MST, VPID, M) :-
 
 entry_parents(E, SortedParents) :-
    findall(T-N, prop(E, parent(_, T, N)), Parents),
-   sort_by([T-_, P] >> parent_type_priority(T, P), Parents, SortedParents).
+   sort_by(of_fst(parent_type_priority), Parents, SortedParents).
 parent_type_priority('Brand', 1).
 parent_type_priority('Series', 2).
+of_fst(P, X-_, Z) :- call(P, X, Z).
 
 entry_maybe_parent(T, E, just(PPID-Name)) :- prop(E, parent(PPID, T, Name)), !.
 entry_maybe_parent(_, _, nothing).
