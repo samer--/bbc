@@ -1,17 +1,15 @@
 :- module(bbc_db, [service/1, service/3, time_service_schedule/3, service_schedule/2, service_live_url/2,
-                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/2, play_entry/3, interval_times/3,
-                   entry_maybe_parent/3, service_parent_child/3, service_parent_children/3]).
+                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/3, interval_times/3, prog_xurl/3,
+                   old_service_entry/2, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_sgml_plugin)).
-:- use_module(library(lambda)).
-:- use_module(library(fileutils)).
 :- use_module(library(insist)).
 :- use_module(library(memo)).
-:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, on_accept/2]).
+:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3]).
 
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 
@@ -62,10 +60,11 @@ time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [S
 service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
 schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
-pid_version(PID, V) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions).
-version_prop(V, vpid(VPID)) :- member(I, V.smpConfig.items), atom_string(VPID, I.vpid).
-version_prop(V, duration(D)) :- member(I, V.smpConfig.items), D = I.duration.
-version_prop(V, types(V.types)).
+pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
+version_prop(_-I, vpid(VPID)) :- atom_string(VPID, I.vpid).
+version_prop(_-I, duration(I.duration)).
+version_prop(C-_, title(C.title)).
+version_prop(C-_, summary(C.summary)).
 
 mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
 
@@ -73,13 +72,17 @@ entry(E) :- service_entry(_, E).
 service_entry(S, E) :-
    service_schedule(S, Schedule),
    xpath(Schedule, /schedule/entry, E).
+old_service_entry(S, E) :-
+   order_by([desc(T)], snapshot_time_service(T, S)),
+   time_service_schedule(T, S, Schedule),
+   xpath(Schedule, /schedule/entry, E).
+snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
 
 title_contains(Sub, E) :-
    xpath(E, title(text), T),
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
    atom_contains(TLower, SubLower).
 
-play_entry(Fmt, E) :- player(Player), play_entry(Player, Fmt, E).
 play_entry(Player, Fmt, E) :-
    maplist(prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
    format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
@@ -108,35 +111,32 @@ prop(E, parent(PID, Type, Name)) :-
 media_connection(M, C) :- member(C, M.connection).
 connection_expiry(C, Expiry) :- parse_time(C.authExpires, Expiry).
 
-entry_media(MST, E, M) :-
-   prop(E, vpid(VPID)),
+vpid_media(MST, VPID, M) :-
    mediaset_type(_, MST),
    catch(mediaset(json, MST, VPID, MS), _, fail),
    member(M, MS.media).
 
-entry_xurl(redir(Fmt), E, inf-HREF) :- prop(E, link(Fmt, HREF)).
-entry_xurl(best(Fmt), E, XURL) :-
-   aggregate(max(B, XUs), setof(XU, entry_fmt_bitrate_xurl(E, Fmt, B, XU), XUs), max(_, XURLs)),
+entry_xurl(Method, E, XURL) :- prog_xurl(Method, entry(E), XURL).
+prog_xurl(redir(Fmt), entry(E), inf-HREF) :- prop(E, link(Fmt, HREF)).
+prog_xurl(best(Fmt), Prog, XURL) :-
+   aggregate(max(B, XUs), setof(XU, prog_fmt_bitrate_xurl(Prog, Fmt, B, XU), XUs), max(_, XURLs)),
    member(XURL, XURLs).
 
-entry_fmt_bitrate_xurl(E, Fmt, BR, Expiry-HREF) :-
-   entry_media('iptv-all', E, M), number_string(BR, M.bitrate),
-   media_connection(M, C), C >:< _{transferFormat:Fmt, protocol:"http", href:HREF},
+prog_fmt_bitrate_xurl(entry(E), Fmt, BR, XURL) :-
+   prop(E, vpid(VPID)), prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, XURL).
+prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, Expiry-HREF) :-
+   vpid_media('iptv-all', VPID, M), number_string(BR, M.get(bitrate)),
+   media_connection(M, C), _{transferFormat:Fmt, protocol:"http", href:HREF} :< C,
    connection_expiry(C, Expiry).
+
+entry_parents(E, SortedParents) :-
+   findall(T-N, prop(E, parent(_, T, N)), Parents),
+   sort_by([T-_, P] >> parent_type_priority(T, P), Parents, SortedParents).
+parent_type_priority('Brand', 1).
+parent_type_priority('Series', 2).
 
 entry_maybe_parent(T, E, just(PPID-Name)) :- prop(E, parent(PPID, T, Name)), !.
 entry_maybe_parent(_, _, nothing).
-
-service_entry_pid_parent(Service, E, PID, Parent) :-
-   service_entry(Service, E),
-   entry_maybe_parent(E, _, Parent),
-   prop(E, pid(PID)).
-
-service_parent_child(Service, MParent, E1) :-
-   setof(E, service_entry_pid_parent(Service, E, _PID, MParent), [E1|_]).
-
-service_parent_children(Service, MParent, Children) :-
-   setof(E, service_parent_child(Service, MParent, E), Children).
 
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
 user:portray(element(entry, As, Es)) :-

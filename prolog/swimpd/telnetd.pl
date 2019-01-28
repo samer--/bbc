@@ -1,7 +1,7 @@
 :- module(telnetd, [telnet_server/3]).
 
 :- use_module(library(socket)).
-:- use_module(asyncu, [spawn/1, setup_stream/2]).
+:- use_module(asyncu, [spawn/1]).
 
 %!  telnet_server(+Interactor, +Port, +Options) is det.
 %   Interactor is a callable goal that implements a protocl on the current
@@ -26,17 +26,14 @@ socket_server(P, Socket, Port, Allow) :-
 server_loop(P, Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),
    debug(mpd(connection), "new connection from ~w", [Peer]),
-   tcp_open_socket(Slave, In, Out),
-   maplist(setup_stream([close_on_abort(false)]), [In, Out]),
-   catch(spawn(call_cleanup(client_thread(P, In, Out, Peer, Allow), (close(In), close(Out)))),
-         error(permission_error(create, thread, mpdclient), _), fail), !,
+   tcp_open_socket(Slave, IO),
+   spawn(call_cleanup(client_thread(P, IO, Peer, Allow),
+                      (debug(mpd(connection), 'Closing connection from ~w', [Peer]), close(IO)))),
    server_loop(P, Socket, Allow).
 
-client_thread(P, In, Out, Peer, Allow) :- call(Allow, Peer), !, service_client(P, In, Out).
-client_thread(_, _, Out, _, _) :- format(Out, 'Access denied.~n', []).
+client_thread(P, IO, Peer, Allow) :- call(Allow, Peer), !, service_client(P, IO).
+client_thread(_, IO, _, _) :- format(IO, 'Access denied.~n', []).
 
-service_client(P, In, Out) :-
-   set_prolog_IO(In, Out, user_error), prompt(_, ''),
-   current_prolog_flag(encoding, Enc),
-   maplist(setup_stream([encoding(Enc), newline(posix)]), [user_input, user_output]),
-   call(P).
+service_client(P, IO) :-
+   maplist(set_stream(IO), [close_on_abort(false), encoding(utf8), newline(posix), buffer(line)]),
+   stream_pair(IO, In, Out), set_input(In), set_output(Out), call(P).
