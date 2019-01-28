@@ -1,4 +1,4 @@
-:- module(bbc_tools, [enum/2, log_failure/1, log_and_succeed/1]).
+:- module(bbc_tools, [sort_by/3, enum/2, log_failure/1, log_and_succeed/1]).
 :- use_module(library(listutils),[zip/3]).
 
 :- meta_predicate log_failure(0), log_and_succeed(0), sort_by(2,+,-).
