@@ -6,7 +6,6 @@
       Artist = ? channel? BBC?
       memoise, DB version?
       Shelf for keeping programmes
-      Allow adding arbitrary PID
       confirm URL is ok and try another if not.
  */
 
@@ -27,7 +26,7 @@ id_pid(Id,PID) :- once(browse(pid_id(PID, Id))).
 is_programme(PID) :- \+service(PID, _, _).
 
 % --- adding to playlist by path  ---
-addid([Directory], nothing) --> {directory(Directory, Entries)}, foldl(add(Directory), Entries).
+addid([Dir], nothing) --> {directory(Dir, Entries)}, foldl(add(Dir), Entries).
 addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Services).
 
 addid(['PID', PID], just(Id)) --> {pid_id(PID, Id)}, add_pid(PID).
@@ -49,7 +48,7 @@ lsinfo([]) -->
    foldl(report(directory), ['In Progress', 'Live Radio']),
    {all_services(Services)}, foldl(service_dir, Services).
 lsinfo(['Live Radio']) --> {live_services(Services)}, foldl(live_radio, Services).
-lsinfo([Directory]) --> {directory(Directory, Items)}, foldl(programme(Directory), Items).
+lsinfo([Dir]) --> {directory(Dir, Items)}, foldl(programme(Dir), Items).
 
 directory('In Progress', Items) :-
    findall(E, (state(position(PID), _), once(old_service_entry_pid(_, E, PID))), Items).
@@ -71,22 +70,28 @@ service_dir(S-Name) -->
    ;  []
    ).
 
-programme(ServiceName, E) -->
-	{insist(entry_tags(ServiceName, E, PID, Tags, [])), pid_id(PID, Id)},
+programme(Dir, E) -->
+	{insist(entry_tags(Dir, E, PID, Tags, [])), pid_id(PID, Id)},
 	foldl(report, Tags), report('Id'-Id).
 
 live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', SLN], File).
 entry_tags(Dir, E, PID) -->
 	[file-File], {prop(E, pid(PID)), path_file([Dir, PID], File)},
-   tag(title_and_maybe_album, E), foldl(maybe, [tag(broadcast, E), tag(availability, E)]),
+   tag(title_and_maybe_album(Dir, PID), E), foldl(maybe, [tag(broadcast, E), tag(availability, E)]),
 	['Comment'-Syn, duration-Dur], {maplist(prop(E), [synopsis(Syn), duration(Dur)])}.
 
 tag(broadcast, E)    --> {prop(E, broadcast(B)), interval_times(B,T,_), ts_string(T,Broadcast)}, ['Date'-Broadcast].
 tag(availability, E) --> {prop(E, availability(A)), interval_times(A,_,T), ts_string(T,Until)}, ['AvailableUntil'-Until].
-tag(title_and_maybe_album, E) -->
+tag(title_and_maybe_album(Dir, PID), E) -->
    {prop(E, title(FullTitle)), entry_maybe_parent('Brand', E, Parent)},
-   {maybe(cut_parent, Parent,  FullTitle, Title)}, ['Title'-Title],
-   maybe(parent_as_album, Parent).
+   {maybe(cut_parent, Parent,  FullTitle, Title), maybe_add_progress(Dir, PID, Title, Title2)},
+   ['Title'-Title2], maybe(parent_as_album, Parent).
+
+maybe_add_progress('In Progress', PID, Tit, Tit2) :- !,
+   state(position(PID), Pos), seconds_hms(Pos, H, M, S),
+   format(string(Tit2), '~s [~d:~d:~d]', [Tit, H, M, S]).
+maybe_add_progress(_, _, Tit, Tit).
+seconds_hms(T, H, M, S) :- divmod(T, 60, MM, S), divmod(MM, 60, H, M).
 
 parent_as_album(_-Name) --> ['Album'-Name].
 cut_parent(_-Name) --> maybe((str_cut(Name), str_cut(": "))).
