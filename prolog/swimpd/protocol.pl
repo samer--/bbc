@@ -8,12 +8,12 @@
 :- multifile command//2.
 
 %! mpd_interactor is det.
-% Run MPD client interaction using the current user_input and user_output Prolog streams.
+% Run MPD client interaction using the current input and output Prolog streams.
 mpd_interactor :- writeln('OK MPD 0.20.0'), registered(client, wait_for_input).
 wait_for_input :- read_command(Cmd), !, handle(Cmd).
 
 read_command(Cmd) :-
-   read_line_to_codes(user_input, Cmd),
+   read_line_to_codes(current_input, Cmd),
    debug(mpd(command), ">> ~s", [Cmd]).
 
 handle(end_of_file) :- !.
@@ -31,9 +31,9 @@ execute(noidle, []) :- !, read_command(Cmd), throw(exec(Cmd)).
 execute(idle, Tail) :- !,
    once(phrase(idle_filter(Filter), Tail)),
    thread_self(Self),
-   stream_property(Out, alias(user_output)),
+   current_output(Out),
    setup_call_cleanup(thread_create(with_output_to(Out, listener(Self-Filter, [])), Id, []),
-                      once(read_command(Cmd)), cleanup_listener(Cmd, Self,Id, NextCmd)),
+                      read_command(Cmd), cleanup_listener(Cmd, Self,Id, NextCmd)),
    throw(exec(NextCmd)).
 execute(Cmd, T) :- execute1(0-'', Cmd, T).
 
