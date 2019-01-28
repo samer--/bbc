@@ -83,8 +83,8 @@ enact_slave_change(_,          just(S1-_), just(S2-_)) :-
 maybe_play(P, _) :- P=play -> send("resume"); true.
 stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("close").
 cue_and_maybe_play(Songs-Pos, P-Au) :-
-   nth0(Pos, Songs, song(_, URL, _)),
-   send(fmt('uri ~s', [URL])),
+   nth0(Pos, Songs, song(_, GetURL, _)),
+   call(GetURL, URL), send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
    maybe_play(P, Au).
 
