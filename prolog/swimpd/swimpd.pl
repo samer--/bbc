@@ -25,6 +25,7 @@
       seek, CLP approach?
       swap client thread roles while idle
       check for trail and stack leaks
+      delimcc for lightweight threads
 
    Player
       allow different alsa device (audio-sink, device)
@@ -33,7 +34,6 @@
       synchronous seek vs ASYNC_DONE msg
 
    Control
-      randomised play sequence
       auto next as well as single (handle stored position correctly too)
 
    State management:

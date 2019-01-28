@@ -27,10 +27,6 @@ uget(Head, Result) :-
    format(string(URL), Pattern, Args),
    get_as(Fmt, URL, Result).
 
-atom_contains(A,Sub) :- once(sub_atom(A, _, _, _, Sub)).
-player(gst123).
-player('gst-play-1.0').
-
 service(S) :- service(S, _, _).
 service(bbc_radio_one,   'R1', 'BBC Radio 1').
 service(bbc_radio_two,   'R2', 'BBC Radio 2').
@@ -81,7 +77,7 @@ snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
 title_contains(Sub, E) :-
    xpath(E, title(text), T),
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
-   atom_contains(TLower, SubLower).
+   once(sub_atom(TLower, _, _, _, SubLower)).
 
 play_entry(Player, Fmt, E) :-
    maplist(prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
@@ -108,14 +104,6 @@ prop(E, parent(PID, Type, Name)) :-
    xpath(E, parents/parent, P),
    maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]).
 
-media_connection(M, C) :- member(C, M.connection).
-connection_expiry(C, Expiry) :- parse_time(C.authExpires, Expiry).
-
-vpid_media(MST, VPID, M) :-
-   mediaset_type(_, MST),
-   catch(mediaset(json, MST, VPID, MS), _, fail),
-   member(M, MS.media).
-
 entry_xurl(Method, E, XURL) :- prog_xurl(Method, entry(E), XURL).
 prog_xurl(redir(Fmt), entry(E), inf-HREF) :- prop(E, link(Fmt, HREF)).
 prog_xurl(best(Fmt), Prog, XURL) :-
@@ -126,8 +114,13 @@ prog_fmt_bitrate_xurl(entry(E), Fmt, BR, XURL) :-
    prop(E, vpid(VPID)), prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, XURL).
 prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, Expiry-HREF) :-
    vpid_media('iptv-all', VPID, M), number_string(BR, M.get(bitrate)),
-   media_connection(M, C), _{transferFormat:Fmt, protocol:"http", href:HREF} :< C,
-   connection_expiry(C, Expiry).
+   member(C, M.connection), _{transferFormat:Fmt, protocol:"http", href:HREF} :< C,
+   parse_time(C.authExpires, Expiry).
+
+vpid_media(MST, VPID, M) :-
+   mediaset_type(_, MST),
+   catch(mediaset(json, MST, VPID, MS), _, fail),
+   member(M, MS.media).
 
 entry_parents(E, SortedParents) :-
    findall(T-N, prop(E, parent(_, T, N)), Parents),
