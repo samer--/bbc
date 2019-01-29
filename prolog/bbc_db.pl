@@ -7,6 +7,8 @@
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_sgml_plugin)).
+:- use_module(library(data/pair), [fst/2]).
+:- use_module(library(callutils)).
 :- use_module(library(insist)).
 :- use_module(library(memo)).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3]).
@@ -140,7 +142,7 @@ vpid_media(MST, VPID, M) :-
 
 entry_parents(E, SortedParents) :-
    findall(T-N, entry_prop(E, parent(_, T, N)), Parents),
-   sort_by([T-_, P] >> parent_type_priority(T, P), Parents, SortedParents).
+   sort_by(parent_type_priority * fst, Parents, SortedParents).
 parent_type_priority('Brand', 1).
 parent_type_priority('Series', 2).
 
