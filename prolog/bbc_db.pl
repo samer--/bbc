@@ -53,11 +53,7 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
-time_service_schedule(T, S, Schedule) :- time_service_schedule1(T, S, DOM), compile_schedule(DOM, Schedule).
-% time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
-
-:- volatile_memo time_service_schedule1(+number, +atom, -list(compound)).
-time_service_schedule1(T, S, Schedule) :- time_service_schedule(T, S, Schedule).
+time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
 
 fetch_new_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
 service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
