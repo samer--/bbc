@@ -89,9 +89,9 @@ tag(title_and_maybe_album(Dir, PID), E) -->
 
 maybe_add_progress('In Progress', PID, Tit, Tit2) :- !,
    state(position(PID), Pos), seconds_hms(Pos, H, M, S),
-   format(string(Tit2), '~s [~d:~d:~d]', [Tit, H, M, S]).
+   format(string(Tit2), '~s [~d:~|~`0t~d~2+:~|~`0t~d~2+]', [Tit, H, M, S]).
 maybe_add_progress(_, _, Tit, Tit).
-seconds_hms(T, H, M, S) :- divmod(T, 60, MM, S), divmod(MM, 60, H, M).
+seconds_hms(T, H, M, S) :- T1 is round(T), divmod(T1, 60, MM, S), divmod(MM, 60, H, M).
 
 parent_as_album(_-Name) --> ['Album'-Name].
 cut_parent(_-Name) --> maybe((str_cut(Name), str_cut(": "))).
