@@ -53,7 +53,7 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
 time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [Schedule])).
 
-service_schedule(S, Schedule) :- aggregate(max(T,Sch), browse(time_service_schedule(T, S, Sch)), max(_, Schedule)).
+service_schedule(S, Schedule) :- once(ordered_service_schedule(S, Schedule)).
 schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
 
 pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
@@ -69,9 +69,9 @@ service_entry(S, E) :-
    service_schedule(S, Schedule),
    xpath(Schedule, /schedule/entry, E).
 old_service_entry(S, E) :-
-   order_by([desc(T)], snapshot_time_service(T, S)),
-   time_service_schedule(T, S, Schedule),
+   ordered_service_schedule(S, Schedule),
    xpath(Schedule, /schedule/entry, E).
+ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
 snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
 
 title_contains(Sub, E) :-
