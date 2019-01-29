@@ -1,6 +1,6 @@
-:- module(bbc_db, [service/1, service/3, time_service_schedule/3, service_schedule/2, service_live_url/2,
-                   service_entry/2, entry/1, prop/2, entry_xurl/3, play_entry/3, interval_times/3, prog_xurl/3,
-                   old_service_entry/2, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
+:- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, prog_xurl/3,
+                   schedule_timespan/2, schedule_updated/2, service_entry/2, entry/1, entry_prop/2, entry_xurl/3,  old_entry/1,
+                   play_entry/3, interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -51,47 +51,25 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
-time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [Schedule])).
+time_service_schedule(T, S, Schedule) :- time_service_schedule1(T, S, DOM), compile_schedule(DOM, Schedule).
+% time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
 
-service_schedule(S, Schedule) :- once(ordered_service_schedule(S, Schedule)).
-schedule_timespan(S, X) :- xpath_interval([start_date, end_date], S, /self, X).
+:- volatile_memo time_service_schedule1(+number, +atom, -list(compound)).
+time_service_schedule1(T, S, Schedule) :- time_service_schedule(T, S, Schedule).
 
-pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
-version_prop(_-I, vpid(VPID)) :- atom_string(VPID, I.vpid).
-version_prop(_-I, duration(I.duration)).
-version_prop(C-_, title(C.title)).
-version_prop(C-_, summary(C.summary)).
+fetch_new_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
+service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
+compile_schedule(DOM, sched(Time, Updated, Entries)) :-
+   xpath(DOM, /self(@updated), Updated),
+   xpath_interval([start_date, end_date], DOM, /self, Time),
+   findall(E, dom_entry(DOM, E), Entries).
 
-mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
-
-entry(E) :- service_entry(_, E).
-service_entry(S, E) :-
-   service_schedule(S, Schedule),
-   xpath(Schedule, /schedule/entry, E).
-old_service_entry(S, E) :-
-   ordered_service_schedule(S, Schedule),
-   xpath(Schedule, /schedule/entry, E).
-ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
-snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
-
-title_contains(Sub, E) :-
-   xpath(E, title(text), T),
-   maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
-   once(sub_atom(TLower, _, _, _, SubLower)).
-
-play_entry(Player, Fmt, E) :-
-   maplist(prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
-   format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
-   play_url(Player, URL).
-
-play_url(Player, URL) :-
-   absolute_file_name(path(Player), _, [solutions(all), access(read)]),
-   format(string(C), '~w "~s"', [Player, URL]),
-   shell(C).
+dom_entry(DOM, entry(Props)) :-
+   xpath(DOM, /schedule/entry, E),
+   findall(Prop, prop(E, Prop), Props).
 
 prop(E, key(X)) :- xpath(E, key(text), X).
 prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
-prop(E, vpid(X)) :- prop(E, pid(PID)), pid_version(PID, V), version_prop(V, vpid(X)).
 prop(E, pid(X)) :- xpath(E, pid(text), X).
 prop(E, title(X)) :- xpath(E, title(text), X).
 prop(E, service(X)) :- xpath(E, service(text), X).
@@ -104,14 +82,52 @@ prop(E, parent(PID, Type, Name)) :-
    xpath(E, parents/parent, P),
    maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]).
 
+schedule_timespan(sched(Time, _, _), Time).
+schedule_updated(sched(Time, _, _), Time).
+schedule_entry(sched(_, _, Entries), E) :- member(E, Entries).
+
+pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
+version_prop(_-I, vpid(VPID)) :- atom_string(VPID, I.vpid).
+version_prop(_-I, duration(I.duration)).
+version_prop(C-_, title(C.title)).
+version_prop(C-_, summary(C.summary)).
+
+mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
+
+entry(E) :- service_entry(_, E).
+service_entry(S, E)     :- service_schedule(S, Schedule), schedule_entry(Schedule, E).
+old_entry(E) :- ordered_service_schedule(_, Schedule), schedule_entry(Schedule, E).
+ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
+snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
+
+title_contains(Sub, E) :-
+   xpath(E, title(text), T),
+   maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
+   once(sub_atom(TLower, _, _, _, SubLower)).
+
+play_entry(Player, Fmt, E) :-
+   maplist(entry_prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
+   format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
+   play_url(Player, URL).
+
+play_url(Player, URL) :-
+   absolute_file_name(path(Player), _, [solutions(all), access(read)]),
+   format(string(C), '~w "~s"', [Player, URL]),
+   shell(C).
+
+entry_prop(entry(Props), Prop) :- member(Prop, Props).
+
+entry_vpid(E, X) :- entry_prop(E, vpid(X)).
+entry_vpid(E, X) :- entry_prop(E, pid(PID)), pid_version(PID, V), version_prop(V, vpid(X)).
+
 entry_xurl(Method, E, XURL) :- prog_xurl(Method, entry(E), XURL).
-prog_xurl(redir(Fmt), entry(E), inf-HREF) :- prop(E, link(Fmt, HREF)).
+prog_xurl(redir(Fmt), entry(E), inf-HREF) :- entry_prop(E, link(Fmt, HREF)).
 prog_xurl(best(Fmt), Prog, XURL) :-
    aggregate(max(B, XUs), setof(XU, prog_fmt_bitrate_xurl(Prog, Fmt, B, XU), XUs), max(_, XURLs)),
    member(XURL, XURLs).
 
 prog_fmt_bitrate_xurl(entry(E), Fmt, BR, XURL) :-
-   prop(E, vpid(VPID)), prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, XURL).
+   entry_vpid(E, VPID), prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, XURL).
 prog_fmt_bitrate_xurl(vpid(VPID), Fmt, BR, Expiry-HREF) :-
    vpid_media('iptv-all', VPID, M), number_string(BR, M.get(bitrate)),
    member(C, M.connection), _{transferFormat:Fmt, protocol:"http", href:HREF} :< C,
@@ -123,15 +139,15 @@ vpid_media(MST, VPID, M) :-
    member(M, MS.media).
 
 entry_parents(E, SortedParents) :-
-   findall(T-N, prop(E, parent(_, T, N)), Parents),
+   findall(T-N, entry_prop(E, parent(_, T, N)), Parents),
    sort_by([T-_, P] >> parent_type_priority(T, P), Parents, SortedParents).
 parent_type_priority('Brand', 1).
 parent_type_priority('Series', 2).
 
-entry_maybe_parent(T, E, just(PPID-Name)) :- prop(E, parent(PPID, T, Name)), !.
+entry_maybe_parent(T, E, just(PPID-Name)) :- entry_prop(E, parent(PPID, T, Name)), !.
 entry_maybe_parent(_, _, nothing).
 
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
-user:portray(element(entry, As, Es)) :-
-   maplist(xpath(element(entry, As, Es)), [pid(text), title(text)], [PID, Title]),
+user:portray(entry(Props)) :-
+   maplist(entry_prop(entry(Props)), [pid(PID), title(Title)]),
    format('<~w|~s>', [PID, Title]).

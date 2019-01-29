@@ -16,13 +16,13 @@ save_service_playlist(Now, Dir, Service, Expiry) :-
    debug(bbc, 'Saving playlist for ~w to "~s"...', [Service, FN]),
    with_output_to_file(FN, (writeln('#EXTM3U'), maplist(write_playlist_item, Items))).
 
-entry_sortkey(E, k(Parents, Date)) :- prop(E, broadcast(Date)), entry_parents(E, Parents).
+entry_sortkey(E, k(Parents, Date)) :- entry_prop(E, broadcast(Date)), entry_parents(E, Parents).
 
 min_expiry((inf-_)-_, E, E) :- !.
 min_expiry((X-_)-_,  E1, E2) :- E2 is min(E1, X).
 
 write_playlist_item((_-URL)-E) :-
-   maplist(prop(E), [title(Title), duration(Dur), broadcast(B)]),
+   maplist(entry_prop(E), [title(Title), duration(Dur), broadcast(B)]),
    interval_times(B, BStart, _),
    format_time(string(BDate), '%x', BStart),
    format('#EXTINF:~d, ~s [~s]\n~w\n', [Dur, Title, BDate, URL]).
@@ -32,7 +32,7 @@ start_service_maintenance(Dir, Service) :-
 
 maintain_service(Dir, Service) :-
    get_time(Now),
-   log_and_succeed(time_service_schedule(Now, Service, _)),
+   log_and_succeed(fetch_new_schedule(Service)),
    save_service_playlist(Now, Dir, Service, Expiry),
    sleep_until(Expiry),
    maintain_service(Dir, Service).
