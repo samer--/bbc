@@ -3,10 +3,9 @@
 /* <module> BBC database interface for MPD server
 
    @todo
-      Artist = ? channel? BBC?
+      Artist = ? channel? BBC? Folders by brand, by broadcast date
       memoise, DB version?
       Shelf for keeping programmes
-      confirm URL is ok and try another if not.
  */
 
 :- use_module(library(memo)).
