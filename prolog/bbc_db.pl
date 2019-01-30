@@ -11,7 +11,7 @@
 :- use_module(library(callutils)).
 :- use_module(library(insist)).
 :- use_module(library(memo)).
-:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3]).
+:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3, pairf/3]).
 
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 
@@ -53,31 +53,18 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
-time_service_schedule(T, S, Schedule) :- time_service_schedule1(T, S, Sch), migrate_schedule(Sch, Schedule).
-% time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
+time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
 
-:- volatile_memo time_service_schedule1(+number, +atom, -list(compound)).
-time_service_schedule1(T, S, Schedule) :- time_service_schedule(T, S, Schedule).
-
-migrate_schedule(sched(T,U,Es), sched(T,U,ETree)) :-
-   maplist(pairf(entry_pid), Es, Pairs),
-   sort(1, @<, Pairs, SortedPairs),
-   ord_list_to_assoc(SortedPairs, ETree).
-entry_pid(E, PID) :- entry_prop(E, pid(PID)).
-pairf(P, X, Y-X) :- call(P, X, Y).
 
 fetch_new_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
 compile_schedule(DOM, sched(Time, Updated, ETree)) :-
    xpath(DOM, /self(@updated), Updated),
    xpath_interval([start_date, end_date], DOM, /self, Time),
    findall(E, dom_entry(DOM, E), Es),
-   maplist(pairf(entry_pid), Es, Pairs),
-   sort(1, @<, Pairs, SortedPairs),
-   ord_list_to_assoc(SortedPairs, ETree).
+   call(ord_list_to_assoc * sort(1, @<) * maplist(pairf(entry_pid)), Es, ETree).
 
-dom_entry(DOM, entry(Props)) :-
-   xpath(DOM, /schedule/entry, E),
-   findall(Prop, prop(E, Prop), Props).
+entry_pid(E, PID) :- entry_prop(E, pid(PID)).
+dom_entry(DOM, entry(Props)) :- xpath(DOM, /schedule/entry, E), findall(Prop, prop(E, Prop), Props).
 
 prop(E, key(X)) :- xpath(E, key(text), X).
 prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
