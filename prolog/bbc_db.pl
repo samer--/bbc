@@ -1,5 +1,5 @@
 :- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, schedule_timespan/2,
-                   service_entry/2, schedule_updated/2, service_pid_entry/3, entry_prop/2, entry_xurl/3,  old_pid_entry/2, prog_xurl/3,
+                   service_entry/2, schedule_updated/2, pid_entry/3, entry_prop/2, entry_xurl/3, prog_xurl/3,
                    play_entry/3, interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
@@ -55,7 +55,6 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
 time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
 
-
 fetch_new_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
 compile_schedule(DOM, sched(Time, Updated, ETree)) :-
    xpath(DOM, /self(@updated), Updated),
@@ -84,7 +83,9 @@ schedule_timespan(sched(Time, _, _), Time).
 schedule_updated(sched(_, Updated, _), Updated).
 service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
 ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
-snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
+snapshot_time_service(T, S) :- browse(time_service_schedule(T, S, _)).
+schedule(latest(S), Schedule) :- service_schedule(S, Schedule).
+schedule(any,       Schedule) :- ordered_service_schedule(_, Schedule).
 
 pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
 version_prop(_-I, vpid(VPID)) :- atom_string(VPID, I.vpid).
@@ -92,9 +93,7 @@ version_prop(_-I, duration(I.duration)).
 version_prop(C-_, title(C.title)).
 version_prop(C-_, summary(C.summary)).
 
-service_pid_entry(S, PID, E)  :- service_schedule(S, Schedule), schedule_pid_entry(Schedule, PID, E).
-old_pid_entry(PID, E) :- ordered_service_schedule(_, Schedule), schedule_pid_entry(Schedule, PID, E).
-schedule_pid_entry(sched(_, _, ETree), PID, E) :- get_assoc(PID, ETree, E).
+pid_entry(Mode, PID, E)  :- schedule(Mode, sched(_,_,ETree)), get_assoc(PID, ETree, E).
 service_entry(S, E) :- service_schedule(S, sched(_, _, ETree)), gen_assoc(_, ETree, E).
 
 title_contains(Sub, E) :-
