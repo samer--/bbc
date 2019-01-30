@@ -1,5 +1,5 @@
-:- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, prog_xurl/3,
-                   schedule_timespan/2, schedule_updated/2, service_entry/2, entry/1, entry_prop/2, entry_xurl/3,  old_entry/1,
+:- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, schedule_timespan/2,
+                   service_entry/2, schedule_updated/2, service_pid_entry/3, entry_prop/2, entry_xurl/3,  old_pid_entry/2, prog_xurl/3,
                    play_entry/3, interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
@@ -53,14 +53,27 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
 :- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
-time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
+time_service_schedule(T, S, Schedule) :- time_service_schedule1(T, S, Sch), migrate_schedule(Sch, Schedule).
+% time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
+
+:- volatile_memo time_service_schedule1(+number, +atom, -list(compound)).
+time_service_schedule1(T, S, Schedule) :- time_service_schedule(T, S, Schedule).
+
+migrate_schedule(sched(T,U,Es), sched(T,U,ETree)) :-
+   maplist(pairf(entry_pid), Es, Pairs),
+   sort(1, @<, Pairs, SortedPairs),
+   ord_list_to_assoc(SortedPairs, ETree).
+entry_pid(E, PID) :- entry_prop(E, pid(PID)).
+pairf(P, X, Y-X) :- call(P, X, Y).
 
 fetch_new_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
-service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
-compile_schedule(DOM, sched(Time, Updated, Entries)) :-
+compile_schedule(DOM, sched(Time, Updated, ETree)) :-
    xpath(DOM, /self(@updated), Updated),
    xpath_interval([start_date, end_date], DOM, /self, Time),
-   findall(E, dom_entry(DOM, E), Entries).
+   findall(E, dom_entry(DOM, E), Es),
+   maplist(pairf(entry_pid), Es, Pairs),
+   sort(1, @<, Pairs, SortedPairs),
+   ord_list_to_assoc(SortedPairs, ETree).
 
 dom_entry(DOM, entry(Props)) :-
    xpath(DOM, /schedule/entry, E),
@@ -81,8 +94,10 @@ prop(E, parent(PID, Type, Name)) :-
    maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]).
 
 schedule_timespan(sched(Time, _, _), Time).
-schedule_updated(sched(Time, _, _), Time).
-schedule_entry(sched(_, _, Entries), E) :- member(E, Entries).
+schedule_updated(sched(_, Updated, _), Updated).
+service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
+ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
+snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
 
 pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
 version_prop(_-I, vpid(VPID)) :- atom_string(VPID, I.vpid).
@@ -90,13 +105,10 @@ version_prop(_-I, duration(I.duration)).
 version_prop(C-_, title(C.title)).
 version_prop(C-_, summary(C.summary)).
 
-mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
-
-entry(E) :- service_entry(_, E).
-service_entry(S, E)     :- service_schedule(S, Schedule), schedule_entry(Schedule, E).
-old_entry(E) :- ordered_service_schedule(_, Schedule), schedule_entry(Schedule, E).
-ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
-snapshot_time_service(T, S) :- browse(bbc_db:time_service_schedule(T, S, _)).
+service_pid_entry(S, PID, E)  :- service_schedule(S, Schedule), schedule_pid_entry(Schedule, PID, E).
+old_pid_entry(PID, E) :- ordered_service_schedule(_, Schedule), schedule_pid_entry(Schedule, PID, E).
+schedule_pid_entry(sched(_, _, ETree), PID, E) :- get_assoc(PID, ETree, E).
+service_entry(S, E) :- service_schedule(S, sched(_, _, ETree)), gen_assoc(_, ETree, E).
 
 title_contains(Sub, E) :-
    xpath(E, title(text), T),
@@ -135,6 +147,7 @@ vpid_media(MST, VPID, M) :-
    mediaset_type(_, MST),
    catch(mediaset(json, MST, VPID, MS), _, fail),
    member(M, MS.media).
+mediaset(Fmt, MS, VPID, Result) :- uget(u_mediaset(Fmt, MS, VPID), Result).
 
 entry_parents(E, SortedParents) :-
    findall(T-N, entry_prop(E, parent(_, T, N)), Parents),

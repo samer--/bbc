@@ -8,7 +8,7 @@
 save_service_playlist(Now, Dir, Service, Expiry) :-
    InOneWeek is Now + 7*24*3600,
    debug(bbc, 'Gathering playlist for ~w...', [Service]),
-   findall(E, distinct(PID, service_entry_pid(S, E, PID)), Entries),
+   findall(E, distinct(PID, service_pid_entry(S, PID, E)), Entries),
    sort_by(entry_sortkey, Entries, SortedEntries),
    findall(XU-E, (member(E, SortedEntries), log_failure(entry_xurl(best("hls"), E, XU))), Items),
    foldl(min_expiry, Items, InOneWeek, Expiry),

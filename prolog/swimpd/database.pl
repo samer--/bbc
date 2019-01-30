@@ -15,9 +15,9 @@
 :- use_module(state,  [state/2]).
 :- use_module(tools,  [report//1, report//2, maybe/2, maybe//2]).
 :- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
-:- use_module(bbc(bbc_db), [service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, service_entry/2,
-                            old_entry/1, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1,
-                            schedule_updated/2, entry_parents/2, version_prop/2, prog_xurl/3, pid_version/2]).
+:- use_module(bbc(bbc_db), [service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, service_pid_entry/3,
+                            old_pid_entry/2, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1,
+                            service_entry/2, schedule_updated/2, entry_parents/2, version_prop/2, prog_xurl/3, pid_version/2]).
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -30,9 +30,9 @@ addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Se
 
 addid(['PID', PID], just(Id)) --> {pid_id(PID, Id)}, add_pid(PID).
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
-addid(['In Progress', PID], just(Id)) --> {old_entry_pid(E, PID), pid_id(PID, Id)}, add('In Progress', E).
+addid(['In Progress', PID], just(Id)) --> {old_pid_entry(PID, E), pid_id(PID, Id)}, add('In Progress', E).
 addid([LongName, PID], just(Id)) -->
-   {longname_service(LongName, S), service_entry_pid(S, E, PID), pid_id(PID, Id)},
+   {longname_service(LongName, S), service_pid_entry(S, PID, E), pid_id(PID, Id)},
    add(LongName, E).
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, =(URL), Tags)].
@@ -50,10 +50,10 @@ lsinfo(['Live Radio']) --> {live_services(Services)}, foldl(live_radio, Services
 lsinfo([Dir]) --> {directory(Dir, Items)}, foldl(programme(Dir), Items).
 
 directory('In Progress', Items) :-
-   findall(E, (state(position(PID), _), once(old_entry_pid(E, PID))), Items).
+   findall(E, (state(position(PID), _), once(old_pid_entry(PID, E))), Items).
 directory(ServiceName, SortedItems) :-
 	longname_service(ServiceName, S),
-   findall(E, distinct(PID, service_entry_pid(S, E, PID)), Items),
+   findall(E, service_entry(S, E), Items),
    sort_by(entry_sortkey, Items, SortedItems).
 entry_sortkey(E, k(SortedParents, Date)) :- entry_prop(E, broadcast(Date)), entry_parents(E, SortedParents).
 
@@ -94,13 +94,10 @@ ts_string(T, S) :- format_time(string(S), '%c', T).
 path_file(Path, File) :- atomic_list_concat(Path, '/', File).
 
 db_stats([artists-1, albums-M, songs-N, db_playtime-Dur]) :-
-   findall(B-D, distinct(PID, pid_brand_dur(PID, B, D)), Items), length(Items, N),
+   findall(B-D, brand_dur(B, D), Items), length(Items, N),
    aggregate_all(count, distinct(PP,  member(just(PP-_)-_, Items)), M),
    aggregate_all(sum(D), member(_-D, Items), Dur).
-pid_brand_dur(PID, B, D) :- service_entry_pid(_, E, PID), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
-
-service_entry_pid(S, E, PID) :- service_entry(S, E), entry_prop(E, pid(PID)).
-old_entry_pid(E, PID) :- old_entry(E), entry_prop(E, pid(PID)).
+brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
 
 update_db([]) :- forall(service(S, _, _), fetch_new_schedule(S)).
 update_db([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S).
