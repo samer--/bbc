@@ -36,7 +36,8 @@ addid([LongName, PID], just(Id)) -->
    add(LongName, E).
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, =(URL), Tags)].
-add(LongName, E) --> {entry_tags(LongName, E, PID, Tags, []), entry_xurl(redir(dash), E, _-URL)}, [song(PID, =(URL), Tags)].
+add(LongName, E) --> {entry_tags(LongName, E, PID, Tags, [])}, [song(PID, database:entry_url(E), Tags)].
+entry_url(E, URL) :- entry_xurl(_, E, _-URL).
 
 add_pid(PID) --> [song(PID, database:version_url(V), [file-PID|Tags])], {pid_version(PID, V), version_tags(V, Tags)}.
 version_tags(V, [duration-D, 'Title'-T, 'Comment'-S]) :- maplist(version_prop(V), [duration(D), title(T), summary(S)]).
