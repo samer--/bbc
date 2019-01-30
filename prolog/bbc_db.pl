@@ -10,7 +10,6 @@
 :- use_module(library(data/pair), [fst/2]).
 :- use_module(library(callutils)).
 :- use_module(library(insist)).
-:- use_module(library(memo)).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3, pairf/3]).
 
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
@@ -52,10 +51,15 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
    URLForm = 'http://open.live.bbc.co.uk/mediaselector/6/select/version/2.0/mediaset/~s/format/~s/vpid/~s',
    mediaset_type(_, MediaSet), mediaset_format(Fmt).
 
-:- volatile_memo time_service_schedule(+number, +atom, -list(compound)).
-time_service_schedule(_, S, Schedule) :- insist(uget(service_availability(S), [DOM])), compile_schedule(DOM, Schedule).
+:- dynamic snapshot_time_service/2, time_service_schedule/3.
 
-fetch_new_schedule(S) :- get_time(Now), time_service_schedule(Now, S, _).
+fetch_new_schedule(S) :-
+   get_time(Now),
+   insist(uget(service_availability(S), [DOM])),
+   compile_schedule(DOM, Schedule),
+   assert(time_service_schedule(Now, S, Schedule)),
+   assert(snapshot_time_service(Now, S)).
+
 compile_schedule(DOM, sched(Time, Updated, ETree)) :-
    xpath(DOM, /self(@updated), Updated),
    xpath_interval([start_date, end_date], DOM, /self, Time),
@@ -83,7 +87,6 @@ schedule_timespan(sched(Time, _, _), Time).
 schedule_updated(sched(_, Updated, _), Updated).
 service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
 ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
-snapshot_time_service(T, S) :- browse(time_service_schedule(T, S, _)).
 schedule(latest(S), Schedule) :- service_schedule(S, Schedule).
 schedule(any,       Schedule) :- ordered_service_schedule(_, Schedule).
 
