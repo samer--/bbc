@@ -16,7 +16,7 @@
 :- use_module(tools,  [report//1, report//2, maybe/2, maybe//2]).
 :- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, pid_entry/3,
-                            service_entry/2, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3, browse/1,
+                            service_entry/2, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3,
                             schedule_updated/2, entry_parents/2, version_prop/2, prog_xurl/3, pid_version/2]).
 
 :- volatile_memo pid_id(+atom, -integer).
