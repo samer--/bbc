@@ -62,23 +62,12 @@ def main():
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
     loop = GObject.MainLoop()
 
-    events = def_consult(ignore, #do(print_, lambda m:str(m.type)),
+    events = def_consult(ignore,
                    { MT.EOS:          compose(print_, const('eos'))
                    , MT.ERROR:        do(rpt('error'), M.parse_error)
                    , MT.TAG:          do(maybe(rpt('bitrate')), compose(guard(pos), tl_bitrate, M.parse_tag))
-                   # , MT.STREAM_START: do(rpt('format'), compose(maybe(fmt_fst_cap), get_caps, const(p)))
                    , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(changes([None])),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
-                   # , MT.ASYNC_DONE:       do(rpt('async_done'), M.parse_async_done)
-                   # , MT.BUFFERING:        do(maybe(rpt('buffering')), compose(guard(eq(100)), M.parse_buffering))
-                   # , MT.LATENCY:       ignore
-                   # , MT.STATE_CHANGED: ignore
-                   # , MT.STREAM_STATUS: ignore
-                   # , MT.ELEMENT:       ignore
-                   # , MT.NEED_CONTEXT:  ignore
-                   # , MT.HAVE_CONTEXT:  ignore
-                   # , MT.NEW_CLOCK:     ignore
-                   # , MT.RESET_TIME:    ignore
                    })
     def sync():     p.get_state(100000000000000)
     def position(): return ns_to_s(p.query_position(_FORMAT_TIME)[1])
