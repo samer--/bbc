@@ -1,4 +1,4 @@
-:- module(gst, [start_gst_thread/1, gst_audio_info/3, gst/2, enact_player_change/3, set_volume/1]).
+:- module(gst, [start_gst_thread/1, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
@@ -33,29 +33,27 @@ gst_handle(Codes, Self, Out) :-
    gst_read_next(Self, Out).
 
 gst_message(eos, []) --> {notify_eos}.
-gst_message(bitrate, [bitrate(BR)]) --> " ", num(BR).
-gst_message(position, [position(BR)]) --> " ", num(BR).
-gst_message(duration, [duration(D)]) --> " ", num(D).
-gst_message(format, [format(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+gst_message(bitrate, [bitrate-BR]) --> " ", num(BR).
+gst_message(position, [position-BR]) --> " ", num(BR).
+gst_message(duration, [duration-D]) --> " ", num(D).
+gst_message(format, [format-(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt('volume ~5f', [FV])).
-gst_volume(V) :- send(fmt('volume ~f',V)).
 gst_uri(URI) :- send(fmt('uri ~s',[URI])).
 send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, '~s\n', [Codes]).
-recv(M) :- gst(Id,_), thread_get_message(Id, M, [timeout(2)]).
+recv(K, MV) :- gst(Id, _), (thread_get_message(Id, K-V, [timeout(3)]) -> MV = just(V); MV = nothing).
 
 start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
-gst_audio_info(Id, Elap1/Dur1, au(Dur1, Elap, BR, Fmt)) :-
+gst_audio_info(Elap1/Dur1, au(Dur1, Elap, BR, Fmt)) :-
    maplist(send, ["bitrate", "format", "position"]),
-   (thread_get_message(Id, bitrate(R), [timeout(1)]) -> BR=just(R); BR=nothing),
-   (thread_get_message(Id, format(F), [timeout(1)]) -> Fmt=just(F); Fmt=nothing),
-   (thread_get_message(Id, position(Elap), [timeout(1)]) -> true; Elap=Elap1).
+   maplist(recv, [bitrate, format, position], [BR, Fmt, Elap2]),
+   (Elap2 = nothing -> Elap=Elap1; Elap2=just(Elap)).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
@@ -90,9 +88,7 @@ cue_and_maybe_play(Songs-Pos, P-Au) :-
 save_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
    (  id_wants_bookmark(Id)
-   -> debug(mpd(gst), 'Saving position for ~w', [Id]),
-      send("position"), recv(position(PPos)),
-      set_state(position(Id), PPos)
+   -> send("position"), recv(position, PPos), maybe(set_state(position(Id)), PPos)
    ;  true
    ).
 
