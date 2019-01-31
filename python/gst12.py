@@ -57,13 +57,14 @@ def changes(state):
 def main():
     p = Gst.ElementFactory.make("playbin", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
+    durations = changes([0.0])
     loop = GObject.MainLoop()
 
     events = def_consult(ignore,
                    { MT.EOS:          compose(print_, const('eos'))
                    , MT.ERROR:        compose(rpt('error'), M.parse_error, fst)
                    , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag, fst)
-                   , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(changes([None])),
+                   , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
                    })
     def sync():     p.get_state(100000000000000)
@@ -71,7 +72,7 @@ def main():
     def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t)), sync()
     def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), d))
     player = handler({ '':     lambda _: loop.quit()
-                     , 'stop':     lambda _: stop()
+                     , 'stop':     lambda _: (stop(), p.set_property('uri', ''), durations(0.0))
                      , 'pause':    lambda _: pause()
                      , 'play':     lambda _: play()
                      , 'volume':   lambda a: p.set_property('volume', float(a[0]))
