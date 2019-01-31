@@ -5,8 +5,7 @@
 :- use_module(library(dcg_codes), [fmt//2]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_state/2]).
-:- use_module(asyncu, [spawn/1, setup_stream/2]).
-:- use_module(tools,  [parse_head//2, num//1, nat//1, maybe/2]).
+:- use_module(tools,  [parse_head//2, num//1, nat//1, maybe/2, spawn/1, setup_stream/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 

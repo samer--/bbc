@@ -2,8 +2,7 @@
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3]).
-:- use_module(asyncu, [registered/2, thread/2]).
-:- use_module(tools,  [in/2, quoted//2, atom//1, report//2, parse_head//2]).
+:- use_module(tools,  [in/2, quoted//2, atom//1, report//2, parse_head//2, registered/2, thread/2]).
 
 :- multifile command//2.
 

@@ -1,7 +1,7 @@
 :- module(telnetd, [telnet_server/3]).
 
 :- use_module(library(socket)).
-:- use_module(asyncu, [spawn/1]).
+:- use_module(tools, [spawn/1]).
 
 %!  telnet_server(+Interactor, +Port, +Options) is det.
 %   Interactor is a callable goal that implements a protocl on the current
