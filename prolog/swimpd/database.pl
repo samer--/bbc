@@ -10,7 +10,7 @@
 
 :- use_module(library(memo)).
 :- use_module(library(dcg_core),  [maybe/3]).
-:- use_module(state,  [state/2]).
+:- use_module(state,  [state/2, upd_state/2]).
 :- use_module(tools,  [report//1, report//2, maybe/2, maybe//2, spawn/1]).
 :- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, pid_entry/3,
@@ -92,14 +92,15 @@ str_cut(Pre, String, Suff) :- string_concat(Pre, Suff, String).
 ts_string(T, S) :- format_time(string(S), '%c', T).
 path_file(Path, File) :- atomic_list_concat(Path, '/', File).
 
-db_stats([artists-1, albums-M, songs-N, db_playtime-Dur]) :-
+db_stats(Stats) :- state(db_stats, Stats) -> true; upd_state(db_stats, db_stats), db_stats(Stats).
+db_stats(_, [artists-1, albums-M, songs-N, db_playtime-Dur]) :-
    findall(B-D, brand_dur(B, D), Items), length(Items, N),
    aggregate_all(count, distinct(PP,  member(just(PP-_)-_, Items)), M),
    aggregate_all(sum(D), member(_-D, Items), Dur).
 brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
 
-update_db([]) :- forall(service(S, _, _), fetch_new_schedule(S)).
-update_db([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S).
+update_db([]) :- forall(service(S, _, _), fetch_new_schedule(S)), upd_state(db_stats, db_stats).
+update_db([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S), upd_state(db_stats, db_stats).
 all_services(Services) :- findall(S-SLN, service(S, _, SLN), Services).
 live_services(Services) :- findall(S-SLN, live_service(S, SLN), Services).
 longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; fetch_new_schedule(S)).
