@@ -5,6 +5,7 @@
 :- use_module(library(dcg_codes), [fmt//2]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_state/2]).
+:- use_module(protocol, [notify_all/1]).
 :- use_module(tools,  [parse_head//2, num//1, nat//1, maybe/2, spawn/1, setup_stream/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
@@ -29,14 +30,19 @@ gst_handle(end_of_file, _, _) :- debug(mpd(gst), 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
    debug(mpd(gst), '~~> ~s', [Codes]),
    insist(phrase(parse_head(Head, Tail), Codes)),
-   (phrase(gst_message(Head, Msgs), Tail) -> maplist(thread_send_message(Self), Msgs); true),
+   (  phrase(gst_message(Head, Msgs, Globals), Tail)
+   -> maplist(thread_send_message(Self), Msgs),
+      maplist(set_global, Globals)
+   ;  true
+   ),
    gst_read_next(Self, Out).
+set_global(K-V) :- set_state(K, V), notify_all([player]).
 
-gst_message(eos, []) --> {notify_eos}.
-gst_message(bitrate, [bitrate-BR]) --> " ", num(BR).
-gst_message(position, [position-BR]) --> " ", num(BR).
-gst_message(duration, [duration-D]) --> " ", num(D).
-gst_message(format, [format-(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+gst_message(eos, [], []) --> {notify_eos}.
+gst_message(position, [position-X], []) --> " ", num(X).
+gst_message(bitrate, [], [bitrate-just(BR)]) --> " ", num(BR).
+gst_message(duration, [], [duration-D]) --> " ", num(D).
+gst_message(format, [], [format-just(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
@@ -50,10 +56,9 @@ start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
-gst_audio_info(Elap1/Dur1, au(Dur1, Elap, BR, Fmt)) :-
-   maplist(send, ["bitrate", "format", "position"]),
-   maplist(recv, [bitrate, format, position], [BR, Fmt, Elap2]),
-   (Elap2 = nothing -> Elap=Elap1; Elap2=just(Elap)).
+gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
+   send("position"), recv(position, just(Elap)),
+   maplist(state, [bitrate, format, duration], [BR, Fmt, Dur]).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
@@ -70,20 +75,20 @@ enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
    ).
 
 enact_slave_change(_,          nothing, nothing) :- !.
-enact_slave_change(SongsPos-_, just(_), nothing) :- !, save_position(SongsPos), send("close").
+enact_slave_change(SongsPos-_, just(_), nothing) :- !, save_position(SongsPos), send("stop").
 enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, cue_and_maybe_play(SongsPos, S-Au).
 enact_slave_change(_,          just(S1-_), just(S2-_)) :-
    (  S1-S2 = play-pause -> send("pause")
-   ;  S1-S2 = pause-play -> send("resume")
+   ;  S1-S2 = pause-play -> send("play")
    ;  true
    ).
-maybe_play(P, _) :- P=play -> send("resume"); true.
-stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("close").
-cue_and_maybe_play(Songs-Pos, P-Au) :-
-   nth0(Pos, Songs, song(_, GetURL, _)),
-   call(GetURL, URL), send(fmt('uri ~s', [URL])),
+stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("stop").
+cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
+   nth0(Pos, Songs, song(_, GetURL, _)), call(GetURL, URL),
+   maplist(set_state, [bitrate, format, duration], [nothing, nothing, Dur]),
+   send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
-   maybe_play(P, Au).
+   (P=play -> send("play"); true).
 
 save_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
