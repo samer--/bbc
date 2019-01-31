@@ -1,6 +1,6 @@
 :- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, schedule_timespan/2,
                    service_entry/2, schedule_updated/2, pid_entry/3, entry_prop/2, entry_xurl/3, prog_xurl/3,
-                   play_entry/3, interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
+                   interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
@@ -15,10 +15,10 @@
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 :- dynamic snapshot_time_service/2, time_service_schedule/3.
 
-xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
-xpath_interval(As, E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), As, [T1, T2]).
-in_interval(ts(A)-ts(B), X) :- A =< X, X =< B.
 interval_times(ts(S)-ts(E), S, E).
+in_interval(ts(A)-ts(B), X) :- A =< X, X =< B.
+xpath_interval(As, E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), As, [T1, T2]).
+xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
 
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
@@ -102,11 +102,6 @@ title_contains(Sub, E) :-
    xpath(E, title(text), T),
    maplist(downcase_atom, [Sub, T], [SubLower, TLower]),
    once(sub_atom(TLower, _, _, _, SubLower)).
-
-play_entry(Player, Fmt, E) :-
-   maplist(entry_prop(E), [pid(PID), title(Title), link(Fmt, URL)]),
-   format(user_error, 'Playing ~w as ~w: ~w...\n', [PID, Fmt, Title]),
-   play_url(Player, URL).
 
 play_url(Player, URL) :-
    absolute_file_name(path(Player), _, [solutions(all), access(read)]),
