@@ -49,8 +49,7 @@ def io_watch(s, c, f): return lambda: (bind(GObject.source_remove, GObject.io_ad
 def signal_watch(bus): return lambda: (bus.remove_signal_watch, bus.add_signal_watch())
 def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
-def get_caps(p): return p.emit('get-audio-pad', 0).get_current_caps()
-def fmt_fst_cap(c): return fmt_cap(c.get_structure(0))
+def get_cap(p): return maybe(lambda a: a.get_current_caps().get_structure(0))(p.emit('get-audio-pad', 0))
 def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
 ctrue = const(True)
 
@@ -79,11 +78,10 @@ def main():
                      , 'play':     lambda _: play()
                      , 'volume':   lambda a: p.set_property('volume', float(a[0]))
                      , 'position': lambda _: rpt('position')(position())
-                     , 'format':   lambda _: (sync(), rpt('format')(maybe(fmt_fst_cap)(get_caps(p))))
                      , 'seekrel':  lambda a: seek(float(a[0]) + position())
                      , 'seek':     lambda a: seek(float(a[0]))
-                     , 'sync':     lambda _: sync()
-                     , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause())
+                     , 'uri':      fork(lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync()),
+                                        compose(maybe(compose(rpt('format'), fmt_cap)), get_cap, const(p)))
                      })
 
     def on_message(_, message, loop): return ctrue(events(message.type)((message, loop)))
