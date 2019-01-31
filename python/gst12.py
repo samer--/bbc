@@ -14,8 +14,7 @@ def def_consult(default, d):    return lambda k: d.get(k, default)
 def compose2(f, g): return lambda x: f(g(x))
 def compose(*args): return reduce(compose2, args)
 def const(x):       return lambda _: x
-def app(f, x):      return f(x)
-def tuncurry(f):    return lambda args: reduce(app, args, f)
+def tuncurry(f):    return lambda args: reduce(lambda f, x: f(x), args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
 def fst((x, _)):    return x
 def snd((_, x)):    return x
@@ -24,7 +23,7 @@ def mul(y):         return lambda x: x * y
 def divby(y):       return lambda x: float(x) / y
 def maybe(f):       return lambda x: None if x is None else f(x)
 def guard(p):       return lambda x: x if p(x) else None
-eq, neq = tuple(map(delay, [op.eq, op.ne]))
+neq = delay(op.ne)
 pos = bind(op.lt, 0)
 
 class Context(object):
@@ -42,7 +41,6 @@ ns_to_s, s_to_ns = fork(divby, mul)(10 ** 9)
 
 ignore = const(None)
 def to_maybe((valid, x)): return x if valid else None
-def do(a,f): return compose(a, f, fst)
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
 def io_watch(s, c, f): return lambda: (bind(GObject.source_remove, GObject.io_add_watch(s, c, f)), None)
@@ -63,8 +61,8 @@ def main():
 
     events = def_consult(ignore,
                    { MT.EOS:          compose(print_, const('eos'))
-                   , MT.ERROR:        do(rpt('error'), M.parse_error)
-                   , MT.TAG:          do(maybe(rpt('bitrate')), compose(guard(pos), tl_bitrate, M.parse_tag))
+                   , MT.ERROR:        compose(rpt('error'), M.parse_error, fst)
+                   , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag, fst)
                    , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(changes([None])),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
                    })
