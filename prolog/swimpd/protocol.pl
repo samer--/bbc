@@ -84,7 +84,7 @@ listener(Id-Filter, ToPutBack) :-
 listener_msg(broken, _, _, _) :- throw(broken).
 listener_msg(cmd(end_of_file), _, _, _) :- throw(cmd(end_of_file)).
 listener_msg(cmd(`noidle`), Msgs, Id-_, ToReport-ToPutBack) :-
-   reply_phrase(foldl(report(changed), ToReport)), reply(ok),
+   report_changes(ToReport),
    maplist(thread_send_message(Id), Msgs),
    maplist(notify(Id), ToPutBack),
    throw(cmd(`noidle`)).
@@ -97,9 +97,7 @@ listener_msg(changed(S), Msgs, E, ToReport-ToPutBack) :-
 
 listener_msgs([Msg|Msgs], E, S) :- listener_msg(Msg, Msgs, E, S).
 listener_msgs([], E, []-ToPutBack) :- !, listener(E, ToPutBack).
-listener_msgs([], Id-_, ToReport-ToPutBack) :-
-   reply_phrase(foldl(report(changed), ToReport)), reply(ok),
-   listener_tail_wait(Id, ToPutBack).
+listener_msgs([], Id-_, ToReport-ToPutBack) :- report_changes(ToReport), listener_tail_wait(Id, ToPutBack).
 
 listener_tail_wait(Id, ToPutBack) :-
    thread_get_message(Id, Msg),
@@ -115,5 +113,6 @@ cleanup_listener(Cmd, Self, Id, NextCommand) :-
    thread_join(Id, Status),
    insist(Status = exception(cmd(NextCommand))).
 
+report_changes(L) :- sort(L, L1), reply_phrase(foldl(report(changed), L1)), reply(ok).
 notify_all(Subsystems) :- forall(thread(client, Id), maplist(notify(Id), Subsystems)).
 notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
