@@ -109,4 +109,4 @@ live_url(S, URL) :- service_live_url(S, URL).
 live_url(resonance, 'http://stream.resonance.fm:8000/resonance').
 live_service(S, LongName) :- service(S, _, LongName).
 live_service(resonance, 'Resonance FM').
-set_with(K, P) :- call(P, V), set_state(K, V).
+set_with(K, P) :- call(P, _, V), set_state(K, V).
