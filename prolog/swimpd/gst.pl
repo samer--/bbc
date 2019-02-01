@@ -36,7 +36,7 @@ gst_handle(Codes, Self, Out) :-
    ;  true
    ),
    gst_read_next(Self, Out).
-set_global(K-V) :- set_state(K, V), notify_all([player]).
+set_global(K-V) :- set_state(K, V). %, notify_all([player]). % Upsets MPD Droid
 
 gst_message(eos, [], []) --> {notify_eos}.
 gst_message(position, [position-X], []) --> " ", num(X).
