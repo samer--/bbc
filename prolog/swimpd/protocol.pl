@@ -8,8 +8,9 @@
 
 %! mpd_interactor is det.
 % Run MPD client interaction using the current input and output Prolog streams.
-mpd_interactor :- writeln('OK MPD 0.20.0'), registered(client, wait_for_input).
+mpd_interactor :- writeln('OK MPD 0.20.0'), set_timeout(240), registered(client, wait_for_input).
 wait_for_input :- read_command(Cmd), !, handle(Cmd).
+set_timeout(T) :- current_input(In), set_stream(In, timeout(T)).
 
 read_command(Cmd) :-
    read_line_to_codes(current_input, Cmd),
@@ -30,7 +31,7 @@ execute(noidle, []) :- !, read_command(Cmd), throw(exec(Cmd)).
 execute(idle, Tail) :- !,
    once(phrase(idle_filter(Filter), Tail)),
    thread_self(Self),
-   current_output(Out),
+   current_output(Out), set_timeout(infinite),
    setup_call_cleanup(thread_create(with_output_to(Out, listener(Self-Filter, [])), Id, []),
                       read_command(Cmd), cleanup_listener(Cmd, Self,Id, NextCmd)),
    throw(exec(NextCmd)).
@@ -108,11 +109,12 @@ listener_tail_msg(changed(S), Id, ToPutBack) :- listener_tail_wait(Id, [S|ToPutB
 listener_tail_msg(cmd(Cmd), Id, ToPutBack) :- maplist(notify(Id), ToPutBack), throw(cmd(Cmd)).
 
 cleanup_listener(Cmd, Self, Id, NextCommand) :-
+   set_timeout(240),
    (var(Cmd) -> Msg = broken; Msg = cmd(Cmd)),
    thread_send_message(Self, Msg),
    thread_join(Id, Status),
    insist(Status = exception(cmd(NextCommand))).
 
 report_changes(L) :- sort(L, L1), reply_phrase(foldl(report(changed), L1)), reply(ok).
-notify_all(Subsystems) :- forall(thread(client, Id), maplist(notify(Id), Subsystems)).
+notify_all(Subsystems) :- forall(tools:thread(client, Id), maplist(notify(Id), Subsystems)).
 notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
