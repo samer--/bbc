@@ -30,8 +30,6 @@
    Player
       allow different alsa device (audio-sink, device)
       fix failed status after play (gst player has no caps yet?)
-      get format once on play; get bitrate notifications instead of polling
-      synchronous seek vs ASYNC_DONE msg
 
    Control
       auto next as well as single (handle stored position correctly too)
