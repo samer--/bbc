@@ -4,7 +4,6 @@
 
    @todo
       Artist = ? channel? BBC? Folders by brand, by broadcast date
-      memoise, DB version?
       Shelf for keeping programmes
  */
 
@@ -21,6 +20,18 @@
 pid_id(_, Id) :- flag(songid, Id, Id+1).
 id_pid(Id,PID) :- once(browse(pid_id(PID, Id))).
 is_programme(PID) :- \+service(PID, _, _).
+
+% --- update and stats ---
+update_db([]) :- forall(service(S, _, _), fetch_new_schedule(S)), set_with(db_stats, db_stats).
+update_db([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S), set_with(db_stats, db_stats).
+db_stats(Stats) :- state(db_stats, Stats) -> true; set_with(db_stats, db_stats), db_stats(Stats).
+set_with(K, P) :- call(P, _, V), set_state(K, V).
+
+db_stats(_, [artists-1, albums-M, songs-N, db_playtime-Dur]) :-
+   findall(B-D, brand_dur(B, D), Items), length(Items, N),
+   aggregate_all(count, distinct(PP,  member(just(PP-_)-_, Items)), M),
+   aggregate_all(sum(D), member(_-D, Items), Dur).
+brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
 
 % --- adding to playlist by path  ---
 addid([Dir], nothing) --> {directory(Dir, Entries)}, foldl(add(Dir), Entries).
@@ -44,7 +55,7 @@ version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-U
 % --- query db contents ---
 lsinfo([]) -->
    foldl(report(directory), ['In Progress', 'Live Radio']),
-   {all_services(Services)}, foldl(service_dir, Services).
+   {findall(S-SLN, service(S, _, SLN), Services)}, foldl(service_dir, Services).
 lsinfo(['Live Radio']) --> {live_services(Services)}, foldl(live_radio, Services).
 lsinfo([Dir]) --> {directory(Dir, Items)}, foldl(programme(Dir), Items).
 
@@ -67,6 +78,13 @@ programme(Dir, E) -->
 	{insist(entry_tags(Dir, E, PID, Tags, [])), pid_id(PID, Id)},
 	foldl(report, Tags), report('Id'-Id).
 
+% --- common db access for add and lsinfo ---
+longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; fetch_new_schedule(S)).
+live_services(Services) :- findall(S-SLN, live_service(S, SLN), Services).
+live_service(S, LongName) :- service(S, _, LongName).
+live_service(resonance, 'Resonance FM').
+live_url(S, URL) :- service_live_url(S, URL).
+live_url(resonance, 'http://stream.resonance.fm:8000/resonance').
 live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', SLN], File).
 entry_tags(Dir, E, PID) -->
 	[file-File], {entry_prop(E, pid(PID)), path_file([Dir, PID], File)},
@@ -91,22 +109,3 @@ cut_parent(_-Name) --> maybe((str_cut(Name), str_cut(": "))).
 str_cut(Pre, String, Suff) :- string_concat(Pre, Suff, String).
 ts_string(T, S) :- format_time(string(S), '%c', T).
 path_file(Path, File) :- atomic_list_concat(Path, '/', File).
-
-db_stats(Stats) :- state(db_stats, Stats) -> true; set_with(db_stats, db_stats), db_stats(Stats).
-db_stats(_, [artists-1, albums-M, songs-N, db_playtime-Dur]) :-
-   findall(B-D, brand_dur(B, D), Items), length(Items, N),
-   aggregate_all(count, distinct(PP,  member(just(PP-_)-_, Items)), M),
-   aggregate_all(sum(D), member(_-D, Items), Dur).
-brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
-
-update_db([]) :- forall(service(S, _, _), fetch_new_schedule(S)), set_with(db_stats, db_stats).
-update_db([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S), set_with(db_stats, db_stats).
-all_services(Services) :- findall(S-SLN, service(S, _, SLN), Services).
-live_services(Services) :- findall(S-SLN, live_service(S, SLN), Services).
-longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; fetch_new_schedule(S)).
-
-live_url(S, URL) :- service_live_url(S, URL).
-live_url(resonance, 'http://stream.resonance.fm:8000/resonance').
-live_service(S, LongName) :- service(S, _, LongName).
-live_service(resonance, 'Resonance FM').
-set_with(K, P) :- call(P, _, V), set_state(K, V).
