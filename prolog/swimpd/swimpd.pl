@@ -1,4 +1,4 @@
-:- module(swimpd, [mpd_init/0, restore_state/1]).
+:- module(swimpd, [mpd_init/0, restore_state/1, save_state/1, save_state/0]).
 
 :- use_module(library(dcg_core)).
 :- use_module(library(dcg_pair)).
@@ -47,6 +47,9 @@ mpd_init :-
    maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 0-([]-nothing)]),
    retractall(queue(_,_)), assert(queue(0, [])).
 
+save_state :- get_time(Now), format_time(string(Fn), "state-%FT%T.pl", Now), save_state(Fn).
+save_state(Fn) :- with_output_to_file(Fn, listing(mpd_state:state)).
+
 :- meta_predicate restore_state(2).
 restore_state(State) :-
    maplist(State, [volume, queue], [Vol, _-(Songs-_)]),
@@ -62,6 +65,7 @@ term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(setvol, Tail) :-> {phrase(a(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(clear, [])    :-> {updating_queue_state(clear)}.
+command(save, Tail)   :-> {phrase(a(path([Name])), Tail), save_state(Name)}.
 command(add, Tail)    :-> {phrase(a(path(Path)), Tail), add_at(nothing, Path, _)}.
 command(addid, Tail)  :-> {phrase((a(path(Path)), maybe(a(nat), Pos)), Tail), add_at(Pos, Path, just(Id))}, report('Id'-Id).
 command(delete, Tail) :-> {phrase(maybe(a(range), R), Tail), updating_queue_state(delete_range(R, _))}.
