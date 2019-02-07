@@ -13,13 +13,14 @@ wait_for_input :- read_command(Cmd), !, handle(Cmd).
 set_timeout(T) :- current_input(In), set_stream(In, timeout(T)).
 
 read_command(Cmd) :-
-   read_line_to_codes(current_input, Cmd),
-   debug(mpd(command), ">> ~s", [Cmd]).
+   read_line_to_codes(current_input, Codes),
+   debug(mpd(command), ">> ~s", [Codes]),
+   (  Codes = end_of_file -> Cmd = eos
+   ;  insist(parse_head(Head, Tail, Codes, [])), Cmd = Head-Tail
+   ).
 
-handle(end_of_file) :- !.
-handle(Cmd) :-
-   insist(parse_head(Head, Tail, Cmd, [])),
-   handle(Head, Tail).
+handle(eos) :- !.
+handle(Head-Tail) :- handle(Head, Tail).
 
 handle(close, []) :- !.
 handle(noidle, []) :- wait_for_input.
@@ -52,8 +53,7 @@ reply_phrase(P) :-
 
 command_list(Reply) :- accum(Commands, []), execute_list(Reply, Commands, 0).
 execute_list(_, [], _).
-execute_list(Reply, [Cmd|Cmds], Pos) :-
-   parse_head(Head, Tail, Cmd, []),
+execute_list(Reply, [Head-Tail|Cmds], Pos) :-
    execute1(Pos-Head, Head, Tail),
    sub_reply(Reply), succ(Pos, Pos1),
    execute_list(Reply, Cmds, Pos1).
@@ -70,11 +70,11 @@ fmt_reply(Fmt, Args) :-
    debug(mpd(command), '<< ~s', [R]),
    format('~s\n', [R]).
 
-accum --> {read_command(Cmd)}, accum_cont(Cmd).
-accum_cont(`command_list_begin`) --> {throw(protocol_fail)}.
-accum_cont(`command_list_ok_begin`) --> {throw(protocol_fail)}.
-accum_cont(`command_list_end`) --> !, [].
-accum_cont(Cmd) --> [Cmd], accum.
+accum --> {read_command(Head-Tail)}, accum_cont(Head, Tail).
+accum_cont(command_list_begin, _) --> {throw(protocol_fail)}.
+accum_cont(command_list_ok_begin, _) --> {throw(protocol_fail)}.
+accum_cont(command_list_end, []) --> !, [].
+accum_cont(Head, Tail) --> [Head-Tail], accum.
 
 % -- notification system ---
 listener(Id-Filter, ToPutBack) :-
@@ -83,8 +83,8 @@ listener(Id-Filter, ToPutBack) :-
    maplist(thread_get_message(Id), Msgs),
    listener_msg(Msg, Msgs, Id-Filter, []-ToPutBack).
 
-listener_msg(cmd(end_of_file), _, _, _).
-listener_msg(cmd(`noidle`), Msgs, Id-_, ToReport-ToPutBack) :-
+listener_msg(cmd(eos), _, _, _).
+listener_msg(cmd(noidle-[]), Msgs, Id-_, ToReport-ToPutBack) :-
    report_changes(ToReport),
    maplist(thread_send_message(Id), Msgs),
    maplist(notify(Id), ToPutBack).
