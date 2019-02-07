@@ -1,4 +1,5 @@
 :- module(gst, [start_gst_thread/1, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
+% TODO: audio and video sink control. Fix protocol.
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
