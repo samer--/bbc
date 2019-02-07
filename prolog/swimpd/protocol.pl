@@ -17,24 +17,25 @@ read_command(Cmd) :-
    debug(mpd(command), ">> ~s", [Cmd]).
 
 handle(end_of_file) :- !.
-handle(`close`) :- !.
-handle(Cmd) :- catch(handle1(Cmd), exec(Cmd2), handle(Cmd2)).
-
-handle1(Cmd) :-
+handle(Cmd) :-
    insist(parse_head(Head, Tail, Cmd, [])),
+   handle(Head, Tail).
+
+handle(close, []) :- !.
+handle(noidle, []) :- wait_for_input.
+handle(idle, Tail) :- !,
+   once(phrase(idle_filter(Filter), Tail)),
+   thread_self(Self), current_output(Out), set_timeout(infinite),
+   setup_call_cleanup(thread_create(with_output_to(Out, listener(Self-Filter, [])), Id, []),
+                      read_command(Cmd), cleanup_listener(Cmd, Self, Id)),
+   handle(Cmd).
+handle(Head, Tail) :-
    insist(catch((execute(Head, Tail), Reply=ok), mpd_ack(Ack), Reply=Ack)),
    reply(Reply), wait_for_input.
 
 execute(command_list_ok_begin, []) :- !,  command_list(list_ok).
 execute(command_list_begin, []) :- !, command_list(silent).
-execute(noidle, []) :- !, read_command(Cmd), throw(exec(Cmd)).
-execute(idle, Tail) :- !,
-   once(phrase(idle_filter(Filter), Tail)),
-   thread_self(Self),
-   current_output(Out), set_timeout(infinite),
-   setup_call_cleanup(thread_create(with_output_to(Out, listener(Self-Filter, [])), Id, []),
-                      read_command(Cmd), cleanup_listener(Cmd, Self,Id, NextCmd)),
-   throw(exec(NextCmd)).
+execute(make, []) :- !, make.
 execute(Cmd, T) :- execute1(0-'', Cmd, T).
 
 idle_filter(nonvar) --> [].
@@ -82,13 +83,11 @@ listener(Id-Filter, ToPutBack) :-
    maplist(thread_get_message(Id), Msgs),
    listener_msg(Msg, Msgs, Id-Filter, []-ToPutBack).
 
-listener_msg(broken, _, _, _) :- throw(broken).
-listener_msg(cmd(end_of_file), _, _, _) :- throw(cmd(end_of_file)).
+listener_msg(cmd(end_of_file), _, _, _).
 listener_msg(cmd(`noidle`), Msgs, Id-_, ToReport-ToPutBack) :-
    report_changes(ToReport),
    maplist(thread_send_message(Id), Msgs),
-   maplist(notify(Id), ToPutBack),
-   throw(cmd(`noidle`)).
+   maplist(notify(Id), ToPutBack).
 
 listener_msg(changed(S), Msgs, E, ToReport-ToPutBack) :-
    (  E = _-Filter, call(Filter, S)
@@ -104,17 +103,15 @@ listener_tail_wait(Id, ToPutBack) :-
    thread_get_message(Id, Msg),
    listener_tail_msg(Msg, Id, ToPutBack).
 
-listener_tail_msg(broken, _, _) :- throw(broken).
 listener_tail_msg(changed(S), Id, ToPutBack) :- listener_tail_wait(Id, [S|ToPutBack]).
-listener_tail_msg(cmd(Cmd), Id, ToPutBack) :- maplist(notify(Id), ToPutBack), throw(cmd(Cmd)).
+listener_tail_msg(cmd(_), Id, ToPutBack) :- maplist(notify(Id), ToPutBack).
 
-cleanup_listener(Cmd, Self, Id, NextCommand) :-
+cleanup_listener(Cmd, Self, Id) :-
    set_timeout(240),
    (var(Cmd) -> Msg = broken; Msg = cmd(Cmd)),
    thread_send_message(Self, Msg),
-   thread_join(Id, Status),
-   insist(Status = exception(cmd(NextCommand))).
+   insist(thread_join(Id, true)).
 
 report_changes(L) :- sort(L, L1), reply_phrase(foldl(report(changed), L1)), reply(ok).
-notify_all(Subsystems) :- forall(tools:thread(client, Id), maplist(notify(Id), Subsystems)).
+notify_all(Subsystems) :- forall(thread(client, Id), maplist(notify(Id), Subsystems)).
 notify(Id, Subsystem) :- thread_send_message(Id, changed(Subsystem)).
