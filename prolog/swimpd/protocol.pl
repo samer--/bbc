@@ -16,11 +16,11 @@ read_command(Cmd) :-
    read_line_to_codes(current_input, Codes),
    debug(mpd(command), ">> ~s", [Codes]),
    (  Codes = end_of_file -> Cmd = eos
-   ;  insist(parse_head(Head, Tail, Codes, [])), Cmd = Head-Tail
+   ;  insist(parse_head(Head, Tail, Codes, [])), Cmd = cmd(Head,Tail)
    ).
 
 handle(eos) :- !.
-handle(Head-Tail) :- handle(Head, Tail).
+handle(cmd(Head,Tail)) :- handle(Head, Tail).
 
 handle(close, []) :- !.
 handle(noidle, []) :- wait_for_input.
@@ -70,7 +70,7 @@ fmt_reply(Fmt, Args) :-
    debug(mpd(command), '<< ~s', [R]),
    format('~s\n', [R]).
 
-accum --> {read_command(Head-Tail)}, accum_cont(Head, Tail).
+accum --> {read_command(cmd(Head,Tail))}, accum_cont(Head, Tail).
 accum_cont(command_list_begin, _) --> {throw(protocol_fail)}.
 accum_cont(command_list_ok_begin, _) --> {throw(protocol_fail)}.
 accum_cont(command_list_end, []) --> !, [].
@@ -83,12 +83,11 @@ listener(Id-Filter, ToPutBack) :-
    maplist(thread_get_message(Id), Msgs),
    listener_msg(Msg, Msgs, Id-Filter, []-ToPutBack).
 
-listener_msg(cmd(eos), _, _, _).
-listener_msg(cmd(noidle-[]), Msgs, Id-_, ToReport-ToPutBack) :-
+listener_msg(eos, _, _, _).
+listener_msg(cmd(noidle,[]), Msgs, Id-_, ToReport-ToPutBack) :-
    report_changes(ToReport),
    maplist(thread_send_message(Id), Msgs),
    maplist(notify(Id), ToPutBack).
-
 listener_msg(changed(S), Msgs, E, ToReport-ToPutBack) :-
    (  E = _-Filter, call(Filter, S)
    -> listener_msgs(Msgs, E, [S|ToReport]-ToPutBack)
@@ -99,17 +98,15 @@ listener_msgs([Msg|Msgs], E, S) :- listener_msg(Msg, Msgs, E, S).
 listener_msgs([], E, []-ToPutBack) :- !, listener(E, ToPutBack).
 listener_msgs([], Id-_, ToReport-ToPutBack) :- report_changes(ToReport), listener_tail_wait(Id, ToPutBack).
 
-listener_tail_wait(Id, ToPutBack) :-
-   thread_get_message(Id, Msg),
-   listener_tail_msg(Msg, Id, ToPutBack).
+listener_tail_wait(Id, ToPutBack) :- thread_get_message(Id, Msg), listener_tail_msg(Msg, Id, ToPutBack).
 
 listener_tail_msg(changed(S), Id, ToPutBack) :- listener_tail_wait(Id, [S|ToPutBack]).
-listener_tail_msg(cmd(_), Id, ToPutBack) :- maplist(notify(Id), ToPutBack).
+listener_tail_msg(cmd(_,_), Id, ToPutBack) :- maplist(notify(Id), ToPutBack).
 
 cleanup_listener(Cmd, Self, Id) :-
    set_timeout(240),
-   (var(Cmd) -> Msg = broken; Msg = cmd(Cmd)),
-   thread_send_message(Self, Msg),
+   (var(Cmd) -> Cmd = eos; true),
+   thread_send_message(Self, Cmd),
    insist(thread_join(Id, true)).
 
 report_changes(L) :- sort(L, L1), reply_phrase(foldl(report(changed), L1)), reply(ok).
