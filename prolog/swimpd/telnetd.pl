@@ -35,5 +35,5 @@ client_thread(P, IO, Peer, Allow) :- call(Allow, Peer), !, service_client(P, IO)
 client_thread(_, IO, _, _) :- format(IO, 'Access denied.~n', []).
 
 service_client(P, IO) :-
-   maplist(set_stream(IO), [close_on_abort(false), encoding(utf8), newline(posix), buffer(line)]),
+   maplist(set_stream(IO), [close_on_abort(false), encoding(utf8), newline(posix), buffer(full)]),
    stream_pair(IO, In, Out), set_input(In), set_output(Out), call(P).
