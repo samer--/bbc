@@ -11,11 +11,11 @@
 % Run MPD client interaction using the current input and output Prolog streams.
 mpd_interactor :-
    writeln('OK MPD 0.20.0'), thread_self(Self),
-   setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Id, throw(kill)))]),
+   setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill)))]),
                       transduce(Id), cleanup_client(Id)).
 
-client :- catch(registered(client, normal_wait([])), Ex, print_message(error, Ex)).
-cleanup_client(Id) :- catch(thread_send_message(Id, eos), _, true), thread_join(Id, _).
+client :- registered(client, normal_wait([])).
+cleanup_client(Id) :- catch(thread_send_message(Id, eos), _, true), thread_join(Id).
 transduce(Q)       :- read_command(Cmd), handle_cmd(Cmd, Q).
 handle_cmd(cmd(Head, Tail), Q) :- thread_send_message(Q, cmd(Head, Tail)), transduce(Q).
 handle_cmd(eos, _).
@@ -85,7 +85,7 @@ do_and_cont(G, Pending) :-
    reply(Reply), normal_wait(Pending).
 
 execute(Ref, Cmd, T) :-
-   (  catch(reply_phrase(command(Cmd, T)), mpd_err(Err), throw(mpd_ack(ack(Ref, Err)))) -> true
+   (  reply_phrase(command(Cmd, T)) -> true
    ;  throw(mpd_ack(ack(Ref, err(99, 'Failed on ~s', [Cmd]))))
    ).
 
