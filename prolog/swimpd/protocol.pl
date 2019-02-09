@@ -10,7 +10,7 @@
 %! mpd_interactor is det.
 % Run MPD client interaction using the current input and output Prolog streams.
 mpd_interactor :-
-   writeln('OK MPD 0.20.0'), thread_self(Self),
+   output("OK MPD 0.20.0"), thread_self(Self),
    setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill)))]),
                       transduce(Id), cleanup_client(Id)).
 
@@ -65,19 +65,20 @@ accum_cont(command_list_end, []) --> !, [].
 accum_cont(Head, Tail) --> \< [Head-Tail], accum.
 
 sub_reply(silent).
-sub_reply(list_ok) :- fmt_reply('list_OK', []).
+sub_reply(list_ok) :- output("list_OK").
 
 reply_phrase(P) :-
-   phrase(P, Codes), format('~s', [Codes]),
-   debug(mpd(reply), '<< ~s|', [Codes]).
+   phrase(P, Codes), format("~s", [Codes]),
+   debug(mpd(reply), "<< ~s|", [Codes]).
 
-reply(ok) :- fmt_reply('OK', []).
+reply(ok) :- output("OK", []).
 reply(ack(Pos-SubCmd, err(Code, Fmt, Args))) :-
-   fmt_reply('ACK [~d@~d] {~s} ~@', [Code, Pos, SubCmd, format(Fmt, Args)]).
+   format(string(R), "ACK [~d@~d] {~s} ~@", [Code, Pos, SubCmd, format(Fmt, Args)]),
+   output(R).
 
-fmt_reply(Fmt, Args) :-
-   debug(mpd(reply), '~@', format(Fmt, Args)),
-   format(Fmt, Args), nl.
+output(R) :-
+   debug(mpd(command), "<< ~s", [R]),
+   write(R), nl, flush_output.
 
 % -- command execution --
 do_and_cont(G, Pending) :-
