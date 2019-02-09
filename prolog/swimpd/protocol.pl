@@ -15,23 +15,18 @@ mpd_interactor :-
                       transduce(Id), cleanup_client(Id)).
 
 client :- registered(client, normal_wait([])).
-cleanup_client(Id) :- catch(thread_send_message(Id, eos), _, true), thread_join(Id).
-transduce(Q)       :- read_command(Cmd), handle_cmd(Cmd, Q).
-handle_cmd(cmd(Head, Tail), Q) :- thread_send_message(Q, cmd(Head, Tail)), transduce(Q).
-handle_cmd(eos, _).
+cleanup_client(Id) :- catch(thread_send_message(Id, kill), _, true), thread_join(Id).
+transduce(Q)       :- read_command(Cmd), thread_send_message(Q, Cmd), transduce(Q).
 
-read_command(Cmd) :-
+read_command(cmd(Head, Tail)) :-
    read_line_to_codes(current_input, Codes),
-   debug(mpd(command), ">> `~s`", [Codes]),
-   (  Codes = end_of_file -> Cmd = eos
-   ;  insist(parse_head(Head, Tail, Codes, [])), Cmd = cmd(Head,Tail)
-   ).
+   debug(mpd(command), ">> ~s", [Codes]),
+   insist(parse_head(Head, Tail, Codes, [])).
 
 get_message(M) :- thread_self(Self), thread_get_message(Self, M, [timeout(120)]).
 normal_wait(Pending) :- get_message(M), normal_msg(M, Pending).
 normal_msg(changed(S), Pending) :- normal_wait([S|Pending]).
 normal_msg(cmd(Head, Tail), Pending) :- handle(Head, Tail, Pending).
-normal_msg(eos, _).
 
 handle(close,  [], _) :- !.
 handle(command_list_ok_begin, [], Pending) :- !, command_list(list_ok, Pending).
@@ -71,7 +66,7 @@ reply_phrase(P) :-
    phrase(P, Codes), format("~s", [Codes]),
    debug(mpd(reply), "<< ~s|", [Codes]).
 
-reply(ok) :- output("OK", []).
+reply(ok) :- output("OK").
 reply(ack(Pos-SubCmd, err(Code, Fmt, Args))) :-
    format(string(R), "ACK [~d@~d] {~s} ~@", [Code, Pos, SubCmd, format(Fmt, Args)]),
    output(R).
@@ -98,7 +93,6 @@ idle(Pending, Filter) :-
    ).
 
 idle_wait(Filter, ToIgnore) :- thread_get_message(Msg), idle_msg(Msg, Filter, ToIgnore).
-idle_msg(eos, _, _).
 idle_msg(cmd(noidle,[]), _, ToIgnore) :- reply(ok), normal_wait(ToIgnore).
 idle_msg(changed(S), Filter, ToIgnore) :-
    (  call(Filter, S) -> report_changes([S]), normal_wait(ToIgnore)
