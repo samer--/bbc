@@ -4,7 +4,7 @@
 :- use_module(library(dcg_pair)).
 :- use_module(library(dcg_codes), [fmt//2]).
 :- use_module(library(data/pair), [fsnd/3]).
-:- use_module(library(snobol),    [any//1, notany//1, break//1]).
+:- use_module(library(snobol),    [any//1, notany//1, break//1, arb//0]).
 :- use_module(library(insist),    [insist/1]).
 :- use_module(library(callutils), [true2/2, bt_call/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
@@ -21,15 +21,9 @@
    @todo
    Core
       rethink top level control flow
-      unify command arg parsing
       seek, CLP approach?
-      swap client thread roles while idle
       check for trail and stack leaks
-      delimcc for lightweight threads
-
-   Player
-      allow different alsa device (audio-sink, device)
-      fix failed status after play (gst player has no caps yet?)
+      lightweight threads
 
    Control
       auto next as well as single (handle stored position correctly too)
@@ -60,44 +54,44 @@ restore_state(State) :-
 % --- command implementations -----
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
-term_expansion(command(H,T) :-> Body, [Rule, command(H)]) :- dcg_translate_rule(mpd_protocol:command(H,T) --> Body, Rule).
+term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
 
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
-command(setvol, Tail) :-> {phrase(a(num(V)), Tail), upd_and_notify(volume, (\< set(V), \> [mixer]))}.
-command(clear, [])    :-> {updating_queue_state(clear)}.
-command(save, Tail)   :-> {phrase(a(path([Name])), Tail), save_state(Name)}.
-command(add, Tail)    :-> {phrase(a(path(Path)), Tail), add_at(nothing, Path, _)}.
-command(addid, Tail)  :-> {phrase((a(path(Path)), maybe(a(nat), Pos)), Tail), add_at(Pos, Path, just(Id))}, report('Id'-Id).
-command(delete, Tail) :-> {phrase(maybe(a(range), R), Tail), updating_queue_state(delete_range(R, _))}.
-command(deleteid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_queue_state(delete_id(Id, _))}.
-command(move, Tail)   :-> {phrase((a(nat(P1)), a(nat(P2))), Tail), reordering_queue(move(P1, P2))}.
-command(moveid, Tail) :-> {phrase((a(pid(I1)), a(nat(P2))), Tail), reordering_queue((id_pos(I1,P1), move(P1, P2)))}.
-command(swap, Tail)   :-> {phrase((a(nat(P1)), a(nat(P2))), Tail), reordering_queue(swap(P1, P2))}.
-command(swapid, Tail) :-> {phrase((a(pid(I1)), a(pid(I2))), Tail), reordering_queue(swap_id(I1, I2))}.
-command(shuffle, Tail):-> {phrase(maybe(a(range), R), Tail), reordering_queue(shuffle(R))}.
-command(playid, Tail) :-> {phrase(a(pid(Id)), Tail), updating_play_state(play(_, Id))}.
-command(play, Tail)   :-> {phrase(maybe(a(nat), N), Tail), updating_play_state(play(N))}.
-command(stop, [])     :-> {updating_play_state(stop)}.
-command(previous, []) :-> {updating_play_state(step(play, prev))}.
-command(next, [])     :-> {updating_play_state(step(play, next))}.
-command(pause, Tail)  :-> {phrase(maybe(a(nat), X), Tail), updating_play_state(fsnd(fjust(pause(X))))}.
-command(seek, Tail)   :-> {phrase((a(nat(Pos)), a(num(PPos))), Tail), updating_play_state(seek_pos_id(Pos, _, PPos))}.
-command(seekid, Tail) :-> {phrase((a(pid(Id)), a(num(PPos))), Tail), updating_play_state(seek_pos_id(_, Id, PPos))}.
-command(seekcur, Tail) :-> {phrase(a(seek_spec(Spec)), Tail), updating_play_state(seekcur(Spec))}.
+command(save,     a(path([Name]))) :-> {save_state(Name)}.
+command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.
+command(add,      a(path(Path)))   :-> {add_at(nothing, Path, _)}.
+command(addid,    (a(path(Path)), maybe(a(nat), Pos))) :-> {add_at(Pos, Path, just(Id))}, report('Id'-Id).
+command(clear,    [])                       :-> {updating_queue_state(clear)}.
+command(delete,   maybe(a(range), R))       :-> {updating_queue_state(delete_range(R, _))}.
+command(deleteid, a(pid(Id)))               :-> {updating_queue_state(delete_id(Id, _))}.
+command(move,     (a(nat(P1)), a(nat(P2)))) :-> {reordering_queue(move(P1, P2))}.
+command(moveid,   (a(pid(I1)), a(nat(P2)))) :-> {reordering_queue((id_pos(I1,P1), move(P1, P2)))}.
+command(swap,     (a(nat(P1)), a(nat(P2)))) :-> {reordering_queue(swap(P1, P2))}.
+command(swapid,   (a(pid(I1)), a(pid(I2)))) :-> {reordering_queue(swap_id(I1, I2))}.
+command(shuffle,  maybe(a(range), R))       :-> {reordering_queue(shuffle(R))}.
+command(playid,   a(pid(Id)))                  :-> {updating_play_state(play(_, Id))}.
+command(play,     maybe(a(nat), N))            :-> {updating_play_state(play(N))}.
+command(stop,     [])                          :-> {updating_play_state(stop)}.
+command(previous, [])                          :-> {updating_play_state(step(play, prev))}.
+command(next,     [])                          :-> {updating_play_state(step(play, next))}.
+command(pause,    maybe(a(nat), X))            :-> {updating_play_state(fsnd(fjust(pause(X))))}.
+command(seek,     (a(nat(Pos)), a(num(PPos)))) :-> {updating_play_state(seek_pos_id(Pos, _, PPos))}.
+command(seekid,   (a(pid(Id)), a(num(PPos))))  :-> {updating_play_state(seek_pos_id(_, Id, PPos))}.
+command(seekcur,  a(seek_spec(Spec)))          :-> {updating_play_state(seekcur(Spec))}.
+command(update,   maybe_quoted_path(Path)) :-> update_db(Path).
+command(lsinfo,   maybe_quoted_path(Path)) :-> lsinfo(Path).
+command(playlistinfo,  maybe(a(range), R)) :-> reading_state(queue, reading_queue(playlistinfo(R))).
+command(playlistid,    [])                 :-> reading_state(queue, reading_queue(playlistinfo(nothing))).
+command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queue(plchanges(V))).
+command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
+command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
-command(update, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, update_db(Path).
-command(lsinfo, Tail) :-> {phrase(maybe_quoted_path(Path), Tail)}, lsinfo(Path).
-command(stats, [])    :-> {stats(Stats)}, foldl(report, Stats).
-command(outputs, [])  :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status, [])   :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
-command(playlistinfo, Tail) :-> {phrase(maybe(a(range), R), Tail)}, reading_state(queue, reading_queue(playlistinfo(R))).
-command(playlistid, [])  :-> reading_state(queue, reading_queue(playlistinfo(nothing))).
-command(plchanges, Tail) :-> {phrase(a(nat(V)), Tail)}, reading_state(queue, reading_queue(plchanges(V))).
-command(currentsong, []) :-> reading_state(queue, reading_queue(currentsong)).
-command(listplaylists, _) :-> [].
-command(list, _)      :-> [].
+command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
+command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
+command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
-command(ping, [])     :-> [].
+command(list,    arb) :-> [].
+command(ping,     []) :-> [].
 
 % -- interaction with state --
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
