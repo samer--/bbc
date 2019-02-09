@@ -8,7 +8,7 @@
 
 %! mpd_interactor is det.
 % Run MPD client interaction using the current input and output Prolog streams.
-mpd_interactor :- writeln('OK MPD 0.20.0'), set_timeout(240), registered(client, wait_for_input).
+mpd_interactor :- output("OK MPD 0.20.0"), set_timeout(240), registered(client, wait_for_input).
 wait_for_input :- read_command(Cmd), !, handle(Cmd).
 set_timeout(T) :- current_input(In), set_stream(In, timeout(T)).
 
@@ -44,12 +44,12 @@ idle_filter(in(Subsystems)) --> " ", seqmap_with_sep(" ", quoted(atom), Subsyste
 
 execute1(Ref, Cmd, T) :-
    (  catch(reply_phrase(command(Cmd, T)), mpd_err(Err), throw(mpd_ack(ack(Ref, Err)))) -> true
-   ;  throw(mpd_ack(ack(Ref, err(99, 'Failed on ~s', [Cmd]))))
+   ;  throw(mpd_ack(ack(Ref, err(99, "Failed on ~s", [Cmd]))))
    ).
 
 reply_phrase(P) :-
-   phrase(P, Codes), format('~s', [Codes]),
-   debug(mpd(reply), '<< ~s|', [Codes]).
+   phrase(P, Codes), format("~s", [Codes]),
+   debug(mpd(reply), "<< ~s|", [Codes]).
 
 command_list(Reply) :- accum(Commands, []), execute_list(Reply, Commands, 0).
 execute_list(_, [], _).
@@ -59,16 +59,16 @@ execute_list(Reply, [Head-Tail|Cmds], Pos) :-
    execute_list(Reply, Cmds, Pos1).
 
 sub_reply(silent).
-sub_reply(list_ok) :- fmt_reply('list_OK', []).
+sub_reply(list_ok) :- output("list_OK").
 
-reply(ok) :- fmt_reply('OK', []).
+reply(ok) :- output("OK").
 reply(ack(Pos-SubCmd, err(Code, Fmt, Args))) :-
-   fmt_reply('ACK [~d@~d] {~s} ~@', [Code, Pos, SubCmd, format(Fmt, Args)]).
+   format(string(R), "ACK [~d@~d] {~s} ~@", [Code, Pos, SubCmd, format(Fmt, Args)]),
+   output(R).
 
-fmt_reply(Fmt, Args) :-
-   format(string(R), Fmt, Args),
-   debug(mpd(command), '<< ~s', [R]),
-   format('~s\n', [R]).
+output(R) :-
+   debug(mpd(command), "<< ~s", [R]),
+   write(R), nl, flush_output.
 
 accum --> {read_command(Head-Tail)}, accum_cont(Head, Tail).
 accum_cont(command_list_begin, _) --> {throw(protocol_fail)}.
