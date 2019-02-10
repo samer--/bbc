@@ -15,7 +15,7 @@ mpd_interactor :-
                       transduce(Id), cleanup_client(Id)).
 
 client :- registered(client, normal_wait([])).
-cleanup_client(Id) :- catch(thread_send_message(Id, kill), _, true), thread_join(Id).
+cleanup_client(Id) :- catch(thread_send_message(Id, kill), _, true), thread_join(Id, _).
 transduce(Q)       :- read_command(Cmd), thread_send_message(Q, Cmd), transduce(Q).
 
 read_command(cmd(Head, Tail)) :-
