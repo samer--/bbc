@@ -47,9 +47,9 @@ gst_message(format, [], [format-just(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
-set_volume(V) :- FV is (V/100.0)^1.75, send(fmt('volume ~5f', [FV])).
-gst_uri(URI) :- send(fmt('uri ~s',[URI])).
-send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, '~s\n', [Codes]).
+set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
+gst_uri(URI) :- send(fmt("uri ~s",[URI])).
+send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
 recv(K, MV) :- gst(Id, _), (thread_get_message(Id, K-V, [timeout(3)]) -> MV = just(V); MV = nothing).
 
 start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
