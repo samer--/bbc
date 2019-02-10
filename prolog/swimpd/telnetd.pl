@@ -1,7 +1,6 @@
 :- module(telnetd, [telnet_server/3]).
 
 :- use_module(library(socket)).
-:- use_module(tools, [spawn/1]).
 
 %!  telnet_server(+Interactor, +Port, +Options) is det.
 %   Interactor is a callable goal that implements a protocl on the current
@@ -27,12 +26,12 @@ server_loop(P, Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),
    debug(mpd(connection), "new connection from ~w", [Peer]),
    tcp_open_socket(Slave, IO),
-   spawn(call_cleanup(client_thread(P, IO, Peer, Allow),
-                      (debug(mpd(connection), 'Closing connection from ~w', [Peer]), close(IO)))),
+   thread_create(call_cleanup(client(P, IO, Peer, Allow), close_peer(Peer, IO)), _, [detached(true)]),
    server_loop(P, Socket, Allow).
 
-client_thread(P, IO, Peer, Allow) :- call(Allow, Peer), !, service_client(P, IO).
-client_thread(_, IO, _, _) :- format(IO, 'Access denied.~n', []).
+close_peer(Peer, IO) :- debug(mpd(connection), 'Closing connection from ~w', [Peer]), close(IO).
+client(P, IO, Peer, Allow) :- call(Allow, Peer), !, service_client(P, IO).
+client(_, IO, _, _) :- format(IO, 'Access denied.~n', []).
 
 service_client(P, IO) :-
    maplist(set_stream(IO), [close_on_abort(false), encoding(utf8), newline(posix), buffer(full)]),

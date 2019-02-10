@@ -2,6 +2,8 @@
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
 
+:- use_module(library(apply_macros)).
+:- use_module(library(dcg_macros)). % NB. import into user means these apply globally
 :- use_module(prolog/swimpd/telnetd,  [telnet_server/3]).
 :- use_module(prolog/swimpd/protocol, [mpd_interactor/0]).
 :- use_module(prolog/swimpd/gst,      [start_gst_thread/1]).
