@@ -7,11 +7,12 @@ a web-browser. This means they can be used on a headless device such as you migh
 have connected to a hi-fi. Still, there are some usable bits:
 
 ## swimpd - Music Player Daemon server for BBC radio 
-This is MPD server written in Prolog, which provides streaming access to all
+This is an MPD server written in Prolog, which provides streaming access to all
 the programmes in the current BBC radio schedules, as well as the live radio 
 streams. Audio is handled using GStreamer, via a slave process written in Python.
-Work in progress, but works ok with mpc and ncmpc, okish with ncmpcpp, not so good 
-with Theremin and not at all with MPDroid.
+Work in progress, but works pretty well with clients mpc, ncmpc, MPDroid and M.A.L.P.
+(the latter two for Android). Not so good with Theremin, mainly because the Artist
+tag is not defined for any programme.
 
 ## bbc.py - Python script to get media stream URL from programme id
 
