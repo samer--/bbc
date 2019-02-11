@@ -12,7 +12,7 @@
 mpd_interactor :-
    output("OK MPD 0.20.0"), thread_self(Self),
    setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill)))]),
-                      transduce(Id), cleanup_client(Id)).
+                      catch(transduce(Id), kill, true), cleanup_client(Id)).
 
 client :- registered(client, normal_wait([])).
 cleanup_client(Id) :- catch(thread_send_message(Id, kill), _, true), thread_join(Id, _).
