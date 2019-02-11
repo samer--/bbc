@@ -1,4 +1,4 @@
-:- module(mpd_protocol, [mpd_interactor/0, execute/3, notify_all/1]).
+:- module(mpd_protocol, [mpd_interactor/0, notify_all/1]).
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3]).
@@ -45,11 +45,13 @@ command_list(SubReply, Pending1) :-
    accum(Commands-Pending2, []-Pending1),
    do_and_cont(execute_list(Commands, 0, SubReply), Pending2).
 
-execute_list([], _, _).
-execute_list([Head-Tail|Cmds], Pos, Reply) :-
-   execute(Pos-Head, Head, Tail),
-   sub_reply(Reply), succ(Pos, Pos1),
-   execute_list(Cmds, Pos1, Reply).
+execute_list([], _, _, ok).
+execute_list([Head-Tail|Cmds], Pos, SubReply, Reply) :-
+   execute(Pos-Head, Head, Tail, Reply1),
+   execute_list_tail(Reply1, Cmds, Pos, SubReply, Reply).
+execute_list_tail(ack(Ref, Err), _, _, _, ack(Ref, Err)).
+execute_list_tail(ok, Cmds, Pos, SubReply, Reply) :-
+   sub_reply(SubReply), succ(Pos, Pos1), execute_list(Cmds, Pos1, SubReply, Reply).
 
 accum --> {get_message(Msg)}, accum_msg(Msg).
 accum_msg(changed(S)) --> \> [S], accum.
@@ -76,14 +78,10 @@ output(R) :-
    write(R), nl, flush_output.
 
 % -- command execution --
-do_and_cont(G, Pending) :-
-   insist(catch((G, Reply=ok), mpd_ack(Ack), Reply=Ack)),
-   reply(Reply), normal_wait(Pending).
-
-execute(Ref, Cmd, T) :-
-   (  reply_phrase(command(Cmd, T)) -> true
-   ;  throw(mpd_ack(ack(Ref, err(99, 'Failed on ~s', [Cmd]))))
-   ).
+:- meta_predicate do_and_cont(1,+).
+do_and_cont(G, Pending) :- call(G, Reply), reply(Reply), normal_wait(Pending).
+execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail)), !.
+execute(Ref, Head, _, ack(Ref, err(99, 'Failed on ~s', [Head]))).
 
 % -- notification system ---
 idle(Pending, Filter) :-
