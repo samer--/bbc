@@ -12,7 +12,7 @@
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
 :- use_module(protocol, [notify_all/1]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1, db_stats/1]).
-:- use_module(gst,      [gst_audio_info/2, enact_player_change/3, gst/2, set_volume/1]).
+:- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
                          thread/2, registered/2, spawn/1, setup_stream/2]).
