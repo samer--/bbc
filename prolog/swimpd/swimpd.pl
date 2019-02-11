@@ -21,9 +21,7 @@
 
    @todo
    Core
-      rethink top level control flow
       seek, CLP approach?
-      check for trail and stack leaks
       lightweight threads
 
    Control
