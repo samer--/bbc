@@ -1,4 +1,4 @@
-:- module(gst, [start_gst_thread/1, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
+:- module(gst, [start_gst_thread/0, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
 % TODO: audio and video sink control. Fix protocol.
 
 :- use_module(library(insist), [insist/1]).
@@ -7,27 +7,27 @@
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_state/2]).
 :- use_module(protocol, [notify_all/1]).
-:- use_module(tools,  [parse_head//2, num//1, nat//1, maybe/2, spawn/1, setup_stream/2]).
+:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, maybe/2, setup_stream/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
-with_gst(P, Status) :-
+gst_peer :-
    setup_call_cleanup(start_gst(PID, IO),
-                      catch(call(P, PID-IO), Ex, (process_kill(PID), throw(Ex))),
-                      process_wait(PID, Status)).
+                      catch(gst_reader_thread(PID-IO), Ex, (process_kill(PID), throw(Ex))),
+                      process_wait(PID, _Status)).
 
 start_gst(PID,In-Out) :-
-   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
-   maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]).
+   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]).
 
 :- dynamic gst/2.
-gst_reader_thread(V, _-(In-Out)) :-
+gst_reader_thread(_-(In-Out)) :-
    thread_self(Self),
-   setup_call_cleanup(assert(gst(Self,In)), gst_reader(V, Self, Out), retract(gst(Self,In))).
+   maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
+   setup_call_cleanup(assert(gst(Self,In)), gst_reader(Self, Out), retract(gst(Self,In))).
 
-gst_reader(V, Self, Out) :- set_volume(V), gst_read_next(Self, Out).
+gst_reader(Self, Out) :- state(volume, V), set_volume(V), gst_read_next(Self, Out).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
-gst_handle(end_of_file, _, _) :- debug(mpd(gst), 'End of stream from gst', []).
+gst_handle(end_of_file, _, _) :- !, debug(mpd(gst), 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
    debug(mpd(gst), '~~> ~s', [Codes]),
    insist(phrase(parse_head(Head, Tail), Codes)),
@@ -53,7 +53,7 @@ send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), form
 recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(3)]) -> MV = just(V)
                            ; debug(mpd(gst), 'WARNING: timeout waiting for ~w', [K]), MV = nothing).
 
-start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
+start_gst_thread :- thread_create(forever(gst_peer), _, [alias(gst_slave), detached(true)]).
 
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
