@@ -50,7 +50,8 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
-recv(K, MV) :- gst(Id, _), (thread_get_message(Id, K-V, [timeout(3)]) -> MV = just(V); MV = nothing).
+recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(3)]) -> MV = just(V)
+                           ; debug(mpd(gst), 'WARNING: timeout waiting for ~w', [K]), MV = nothing).
 
 start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 
