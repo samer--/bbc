@@ -27,9 +27,9 @@ gst_reader_thread(V, _-(In-Out)) :-
 
 gst_reader(V, Self, Out) :- set_volume(V), gst_read_next(Self, Out).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
-gst_handle(end_of_file, _, _) :- debug(mpd(gst), 'End of stream from gst', []).
+gst_handle(end_of_file, _, _).
 gst_handle(Codes, Self, Out) :-
-   debug(mpd(gst), '~~> ~s', [Codes]),
+   debug(gst(io), '~~> ~s', [Codes]),
    insist(phrase(parse_head(Head, Tail), Codes)),
    (  phrase(gst_message(Head, Msgs, Globals), Tail)
    -> maplist(thread_send_message(Self), Msgs),
@@ -49,9 +49,9 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
-send(P) :- gst(_,In), phrase(P, Codes), debug(mpd(gst), '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
-recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(3)]) -> MV = just(V)
-                           ; debug(mpd(gst), 'WARNING: timeout waiting for ~w', [K]), MV = nothing).
+send(P) :- gst(_,In), phrase(P, Codes), debug(gst(io), '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
+recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(10)]) -> MV = just(V)
+                           ; print_message(warning, recv_timeout(K)), MV = nothing).
 
 start_gst_thread(V) :- spawn(with_gst(gst_reader_thread(V), _)).
 
