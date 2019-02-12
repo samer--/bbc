@@ -22,7 +22,7 @@ start_gst(PID,In-Out) :-
 :- dynamic gst/2.
 gst_reader_thread(_-(In-Out)) :-
    thread_self(Self),
-   maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
+   maplist(setup_stream([close_on_abort(false), buffer(full)]), [In, Out]),
    setup_call_cleanup(assert(gst(Self,In)), gst_reader(Self, Out), retract(gst(Self,In))).
 
 gst_reader(Self, Out) :- state(volume, V), set_volume(V), gst_read_next(Self, Out).
@@ -49,8 +49,8 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
-send(P) :- gst(_,In), phrase(P, Codes), debug(gst, '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
-recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(10)]) -> MV = just(V)
+send(P) :- gst(_,In), phrase(P, Codes), debug(gst, '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]), flush_output(In).
+recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(5)]) -> MV = just(V)
                            ; print_message(warning, recv_timeout(K)), MV = nothing).
 
 start_gst_thread :- thread_create(forever(gst_peer), _, [alias(gst_slave), detached(true)]).
@@ -59,8 +59,10 @@ split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
 gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
+   gst(Id,_), flush_queue(Id, position),
    send("position"), recv(position, just(Elap)),
    maplist(state, [bitrate, format, duration], [BR, Fmt, Dur]).
+flush_queue(Q, K) :- (thread_get_message(Q, K-_, [timeout(0)]) -> flush_queue(Q, K); true).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
@@ -92,13 +94,15 @@ cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    restore_position(Songs-Pos),
    (P=play -> send("play"); true).
 
-save_position(Songs-Pos) :-
-   nth0(Pos, Songs, song(Id, _, _)),
-   (  id_wants_bookmark(Id)
-   -> send("position"), recv(position, PPos), maybe(set_state(position(Id)), PPos)
-   ;  true
-   ).
+save_position(_).
+restore_position(_).
+% save_position(Songs-Pos) :-
+%    nth0(Pos, Songs, song(Id, _, _)),
+%    (  id_wants_bookmark(Id)
+%    -> send("position"), recv(position, PPos), maybe(set_state(position(Id)), PPos)
+%    ;  true
+%    ).
 
-restore_position(Songs-Pos) :-
-   nth0(Pos, Songs, song(Id, _, _)),
-   (state(position(Id), PPos) -> send(("seek ", num(PPos))); true).
+% restore_position(Songs-Pos) :-
+%    nth0(Pos, Songs, song(Id, _, _)),
+%    (state(position(Id), PPos) -> send(("seek ", num(PPos))); true).
