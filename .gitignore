@@ -1,3 +1,4 @@
 .ropeproject/
 .*.sw[n-p]
 .swipl_history
+state*.pl
