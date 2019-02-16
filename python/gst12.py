@@ -75,7 +75,7 @@ def main():
                   , 'pause':    lambda _: pause()
                   , 'play':     lambda _: play()
                   , 'volume':   lambda a: p.set_property('volume', float(a[0]))
-                  , 'position': lambda _: rpt('position')(position())
+                  , 'position': compose(rpt('position'), lambda _: position())
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
                   , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync(), maybe_fmt_cap(get_cap(p)))
