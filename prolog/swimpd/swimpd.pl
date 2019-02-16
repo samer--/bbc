@@ -26,6 +26,8 @@
 
    Control
       auto next as well as single (handle stored position correctly too)
+      Better seekable timeline for radio streams
+      Stop GST player after some time to release audio device
 
    State management:
       multiple sessions
