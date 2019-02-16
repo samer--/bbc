@@ -43,12 +43,13 @@ ignore = const(None)
 def to_maybe((valid, x)): return x if valid else None
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
-def io_watch(s, c, f): return lambda: (bind(GObject.source_remove, GObject.io_add_watch(s, c, f)), None)
+def io_watch(s, c, f, p): return lambda: (bind(GObject.source_remove, GObject.io_add_watch(s, c, f, priority=p)), None)
 def signal_watch(bus): return lambda: (bus.remove_signal_watch, bus.add_signal_watch())
 def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
 def get_cap(p): return maybe(lambda a: a.get_current_caps().get_structure(0))(p.emit('get-audio-pad', 0))
 def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
+def tr(x): sys.stderr.write('%s\n' % repr(x)); return x
 ctrue = const(True)
 
 def changes(state):
@@ -81,6 +82,7 @@ def main():
                      , 'seek':     lambda a: seek(float(a[0]))
                      , 'uri':      fork(lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync()),
                                         compose(maybe(compose(rpt('format'), fmt_cap)), get_cap, const(p)))
+                     # , 'eval':     lambda a: print_(str(eval(a[0])(p)))
                      })
 
     def on_message(_, message, loop): return ctrue(events(message.type)((message, loop)))
@@ -91,9 +93,13 @@ def main():
 
     bus = p.get_bus()
     bus.connect("message", on_message, loop)
-    with Context(io_watch(sys.stdin, GObject.IO_IN, on_input)):
-        with Context(signal_watch(bus)):
-            with Context(lambda: (stop, None)):
-                loop.run()
+    with Context(lambda: (stop, None)):
+        c = read_command(sys.stdin)
+        while c[0] != '':
+            player(c)
+            c = read_command(sys.stdin)
+        # with Context(signal_watch(bus)):
+        #     with Context(io_watch(sys.stdin, GObject.IO_IN, on_input, GObject.PRIORITY_HIGH)):
+        #         loop.run()
 
 if __name__ == '__main__': main()
