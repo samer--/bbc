@@ -50,6 +50,7 @@ def tr(x): sys.stderr.write('%s\n' % repr(x)); return x
 def print_(s):
     with lock: print s; sys.stdout.flush()
 maybe_fmt_cap = maybe(compose(rpt('format'), fmt_cap))
+guard_not_empty = guard(neq(''))
 
 def changes(state):
     def set_and_return(x): state[0] = x; return x
@@ -86,6 +87,6 @@ def main():
     t = threading.Thread(target=handle_messages, args=[p.get_bus()])
     t.daemon = True; t.start()
     with Context(lambda: (stop, None)):
-        while True: player(decons(guard(neq(''))(sys.stdin.readline().rstrip()).split(' ', 1)))
+        while True: player(decons(guard_not_empty(sys.stdin.readline().rstrip()).split(' ', 1)))
 
 if __name__ == '__main__': main()
