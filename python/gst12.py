@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 import sys
 import gi
+import threading
 import operator as op
 from functools import partial as bind
 
 gi.require_version('Gst', '1.0')
-from gi.repository import GObject, Gst
+from gi.repository import Gst
 Gst.init(None)
 
 # --- pytools digest, for self containment ---
@@ -16,7 +17,6 @@ def compose(*args): return reduce(compose2, args)
 def const(x):       return lambda _: x
 def tuncurry(f):    return lambda args: reduce(lambda f, x: f(x), args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
-def fst((x, _)):    return x
 def snd((_, x)):    return x
 def decons(xs):     return xs[0], xs[1:]
 def mul(y):         return lambda x: x * y
@@ -38,19 +38,18 @@ MT = Gst.MessageType
 M = Gst.Message
 _FORMAT_TIME = Gst.Format(Gst.Format.TIME)
 ns_to_s, s_to_ns = fork(divby, mul)(10 ** 9)
+mutex = threading.Lock()
+lock = Context(lambda: (mutex.release, mutex.acquire()))
 
-ignore = const(None)
 def to_maybe((valid, x)): return x if valid else None
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
-def io_watch(s, c, f, p): return lambda: (bind(GObject.source_remove, GObject.io_add_watch(s, c, f, priority=p)), None)
-def signal_watch(bus): return lambda: (bus.remove_signal_watch, bus.add_signal_watch())
-def read_command(s): return decons(s.readline().rstrip().split(' ', 1))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
 def get_cap(p): return maybe(lambda a: a.get_current_caps().get_structure(0))(p.emit('get-audio-pad', 0))
-def print_(s): sys.stdout.write(s); sys.stdout.write('\n'); sys.stdout.flush()
 def tr(x): sys.stderr.write('%s\n' % repr(x)); return x
-ctrue = const(True)
+def print_(s):
+    with lock: print s; sys.stdout.flush()
+maybe_fmt_cap = maybe(compose(rpt('format'), fmt_cap))
 
 def changes(state):
     def set_and_return(x): state[0] = x; return x
@@ -59,47 +58,34 @@ def main():
     p = Gst.ElementFactory.make("playbin", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
     durations = changes([0.0])
-    loop = GObject.MainLoop()
 
-    events = def_consult(ignore,
+    events = def_consult(const(None),
                    { MT.EOS:          compose(print_, const('eos'))
-                   , MT.ERROR:        compose(rpt('error'), M.parse_error, fst)
-                   , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag, fst)
+                   , MT.ERROR:        compose(rpt('error'), M.parse_error)
+                   , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag)
                    , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
                    })
-    def sync():     p.get_state(100000000000000)
+    def handle_msg(m): events(m.type)(m)
+    def sync():     p.get_state(Gst.CLOCK_TIME_NONE)
     def position(): return ns_to_s(p.query_position(_FORMAT_TIME)[1])
     def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t)), sync()
-    def handler(d): return tuncurry(def_consult(lambda _: ctrue(print_('unrecognised')), d))
-    player = handler({ '':     lambda _: loop.quit()
-                     , 'stop':     lambda _: (stop(), p.set_property('uri', ''), durations(0.0))
-                     , 'pause':    lambda _: pause()
-                     , 'play':     lambda _: play()
-                     , 'volume':   lambda a: p.set_property('volume', float(a[0]))
-                     , 'position': lambda _: rpt('position')(position())
-                     , 'seekrel':  lambda a: seek(float(a[0]) + position())
-                     , 'seek':     lambda a: seek(float(a[0]))
-                     , 'uri':      fork(lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync()),
-                                        compose(maybe(compose(rpt('format'), fmt_cap)), get_cap, const(p)))
-                     # , 'eval':     lambda a: print_(str(eval(a[0])(p)))
-                     })
+    def case(d):    return tuncurry(def_consult(lambda _: print_('unrecognised'), d))
+    player = case({ 'stop':     lambda _: (stop(), p.set_property('uri', ''), durations(0.0))
+                  , 'pause':    lambda _: pause()
+                  , 'play':     lambda _: play()
+                  , 'volume':   lambda a: p.set_property('volume', float(a[0]))
+                  , 'position': lambda _: rpt('position')(position())
+                  , 'seekrel':  lambda a: seek(float(a[0]) + position())
+                  , 'seek':     lambda a: seek(float(a[0]))
+                  , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync(), maybe_fmt_cap(get_cap(p)))
+                  })
+    def handle_messages(bus):
+        while True: handle_msg(bus.timed_pop(Gst.CLOCK_TIME_NONE))
 
-    def on_message(_, message, loop): return ctrue(events(message.type)((message, loop)))
-    def on_input(s, _):
-        try: player(read_command(s))
-        except Exception as ex: print "error", ex
-        return True
-
-    bus = p.get_bus()
-    bus.connect("message", on_message, loop)
+    t = threading.Thread(target=handle_messages, args=[p.get_bus()])
+    t.daemon = True; t.start()
     with Context(lambda: (stop, None)):
-        c = read_command(sys.stdin)
-        while c[0] != '':
-            player(c)
-            c = read_command(sys.stdin)
-        # with Context(signal_watch(bus)):
-        #     with Context(io_watch(sys.stdin, GObject.IO_IN, on_input, GObject.PRIORITY_HIGH)):
-        #         loop.run()
+        while True: player(decons(guard(neq(''))(sys.stdin.readline().rstrip()).split(' ', 1)))
 
 if __name__ == '__main__': main()
