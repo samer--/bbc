@@ -1,5 +1,5 @@
 :- module(gst, [start_gst_thread/0, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
-% TODO: audio and video sink control. Fix protocol.
+% TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
@@ -50,7 +50,7 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 send(P) :- gst(_,In), phrase(P, Codes), debug(gst, '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
-recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(10)]) -> MV = just(V)
+recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(15)]) -> MV = just(V)
                            ; print_message(warning, recv_timeout(K)), MV = nothing).
 
 start_gst_thread :- thread_create(forever(gst_peer), _, [alias(gst_slave), detached(true)]).
