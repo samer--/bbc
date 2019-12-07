@@ -52,6 +52,10 @@ restore_state(State) :-
    upd_and_notify(volume, (\< set(Vol), \> [mixer])),
    updating_queue_state(\< \< flip(append, Songs)).
 
+revert(V) :-
+   once(order_by([desc(V)], queue(V, Songs))),
+   updating_queue_state(set_songs(Songs)).
+
 % --- command implementations -----
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
@@ -62,7 +66,7 @@ command(save,     a(path([Name]))) :-> {save_state(Name)}.
 command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(add,      a(path(Path)))   :-> {add_at(nothing, Path, _)}.
 command(addid,    (a(path(Path)), maybe(a(nat), Pos))) :-> {add_at(Pos, Path, just(Id))}, report('Id'-Id).
-command(clear,    [])                       :-> {updating_queue_state(clear)}.
+command(clear,    [])                       :-> {updating_queue_state(set_songs([]))}.
 command(delete,   maybe(a(range), R))       :-> {updating_queue_state(delete_range(R, _))}.
 command(deleteid, a(pid(Id)))               :-> {updating_queue_state(delete_id(Id, _))}.
 command(move,     (a(nat(P1)), a(nat(P2)))) :-> {reordering_queue(move(P1, P2))}.
@@ -144,7 +148,7 @@ insert_at(Pos, P, Songs1, Songs2) :-
    rep(Pos, copy, Songs1-Songs2, Suffix-PrefixT),
    phrase(P, PrefixT, Suffix).
 
-clear --> \< trans(Q, ([]-nothing)), \> player_if_queue_playing(Q).
+set_songs(Songs) --> \< trans(Q, (Songs-nothing)), \> player_if_queue_playing(Q).
 player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
 player_if_playstate_playing(_) --> [player].
 
