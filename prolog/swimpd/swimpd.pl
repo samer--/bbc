@@ -66,7 +66,7 @@ command(save,     a(path([Name]))) :-> {save_state(Name)}.
 command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(add,      a(path(Path)))   :-> {add_at(nothing, Path, _)}.
 command(addid,    (a(path(Path)), maybe(a(nat), Pos))) :-> {add_at(Pos, Path, just(Id))}, report('Id'-Id).
-command(clear,    [])                       :-> {updating_queue_state(set_songs([]))}.
+% command(clear,    [])                       :-> {updating_queue_state(set_songs([]))}.
 command(delete,   maybe(a(range), R))       :-> {updating_queue_state(delete_range(R, _))}.
 command(deleteid, a(pid(Id)))               :-> {updating_queue_state(delete_id(Id, _))}.
 command(move,     (a(nat(P1)), a(nat(P2)))) :-> {reordering_queue(move(P1, P2))}.
