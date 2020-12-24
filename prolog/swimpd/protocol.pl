@@ -11,11 +11,11 @@
 % Run MPD client interaction using the current input and output Prolog streams.
 mpd_interactor :-
    output("OK MPD 0.20.0"), thread_self(Self),
-   setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill)))]),
-                      catch(transduce(Id), kill, true), cleanup_client(Id)).
+   setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill_transducer)))]),
+                      catch(transduce(Id), kill_transducer, true), cleanup_client(Id)).
 
 client :- registered(client, normal_wait([])).
-cleanup_client(Id) :- catch(thread_send_message(Id, kill), _, true), thread_join(Id, _).
+cleanup_client(Id) :- catch(thread_send_message(Id, kill_client), _, true), thread_join(Id, _).
 transduce(Q)       :- read_command(Cmd), thread_send_message(Q, Cmd), transduce(Q).
 
 read_command(cmd(Head, Tail)) :-
