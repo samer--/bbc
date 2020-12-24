@@ -114,7 +114,7 @@ entry_vpid(E, X) :- entry_prop(E, vpid(X)).
 entry_vpid(E, X) :- entry_prop(E, pid(PID)), pid_version(PID, V), version_prop(V, vpid(X)).
 
 entry_xurl(Method, E, XURL) :- prog_xurl(Method, entry(E), XURL).
-prog_xurl(redir(Fmt), entry(E), inf-HREF) :- entry_prop(E, link(Fmt, HREF)).
+prog_xurl(redir(Fmt), entry(E), inf-HREF) :- \+entry_prop(E, vpid('')), entry_prop(E, link(Fmt, HREF)).
 prog_xurl(best(Fmt), Prog, XURL) :-
    aggregate(max(B, XUs), setof(XU, prog_fmt_bitrate_xurl(Prog, Fmt, B, XU), XUs), max(_, XURLs)),
    member(XURL, XURLs).
