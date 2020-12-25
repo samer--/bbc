@@ -1,9 +1,10 @@
-:- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2, schedule_timespan/2,
+:- module(bbc_db, [service/1, service/3, fetch_new_schedule/1, service_schedule/2, service_live_url/2,
                    service_entry/2, schedule_updated/2, pid_entry/3, entry_prop/2, entry_xurl/3, prog_xurl/3,
                    interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
+:- use_module(library(zlib)). % enable gzip encoded HTTP data
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_sgml_plugin)).
@@ -23,6 +24,7 @@ xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A)
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
 get_as(xml, URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
+get_as(html, URL, DOM)  :- with_url(URL, In, load_html(In, DOM, [space(strict), cdata(string)])).
 get_as(pls, URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
 uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
@@ -46,6 +48,16 @@ mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
 mediaset_type(live_only, MS) :- member(MS, ['apple-icy-mp3a', 'http-icy-aac-lc-a']).
 
+service_pid(bbc_radio_one,        p00fzl86).
+service_pid(bbc_radio_two,        p00fzl8v).
+service_pid(bbc_radio_three,      p00fzl8t).
+service_pid(bbc_radio_fourfm,     p00fzl7j).
+service_pid(bbc_radio_four_extra, p00fzl7l).
+service_pid(bbc_6music,           p00fzl65).
+service_pid(bbc_world_service,    p00fzl9p).
+
+service_schedule(Suffix, S, html, 'http://www.bbc.co.uk/schedules/~s~s'-[PID, Suffix]) :- service_pid(S, PID).
+
 service_availability(S, xml, 'http://www.bbc.co.uk/radio/aod/availability/~s.xml'-[S]) :- service(S).
 playlist(PID, json, 'http://www.bbc.co.uk/programmes/~s/playlist.json'-[PID]).
 u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
@@ -54,14 +66,48 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 
 fetch_new_schedule(S) :-
    get_time(Now),
-   insist(uget(service_availability(S), [DOM])),
-   compile_schedule(DOM, Schedule),
+   catch(fetch_new_schedule_xml(S, Schedule), error(existence_error(_, _), _),
+         fetch_new_schedule_json(S, Schedule)),
    assert(time_service_schedule(Now, S, Schedule)),
    assert(snapshot_time_service(Now, S)).
 
-compile_schedule(DOM, sched(Time, Updated, ETree)) :-
+time_to_year_week(T, YearWeek) :- format_time(atom(YearWeek), '%G/w%V', T).
+fetch_new_schedule_json(S, sched(Updated, ETree)) :-
+   service(S), get_time(Now),
+   format_time(atom(Updated), '%FT%T%z', Now),
+   LastWeek is Now - 7*24*3600,
+   maplist(time_etree(S), [Now, LastWeek], [ET1, ET2]),
+   assoc_merge(ET1, ET2, ETree).
+
+assoc_add(K-V, A1, A2) :- put_assoc(K, A1, V, A2).
+assoc_merge(A1, A2, A3) :-
+   assoc_to_list(A1, A1List),
+   foldl(assoc_add, A1List, A2, A3).
+
+time_etree(S, Time, ETree) :-
+   format_time(atom(YW1), '/%G/w%V', Time),
+   uget(service_schedule(YW1, S), [DOM]),
+   xpath(DOM, body/div(@id='orb-modules')//script(@type='application/ld+json',content), [X]),
+   atom_json_dict(X, T, []),
+   get_dict('@graph', T, Graph),
+   findall(E, graph_entry(Graph, E), Es),
+   call(ord_list_to_assoc * sort(1, @<) * maplist(pairf(entry_pid)), Es, ETree).
+
+graph_entry(Graph, entry(Props)) :- member(E, Graph), findall(Prop, jprop(E, Prop), Props).
+jprop(E, pid(X)) :- string_to_atom(E.identifier, X).
+jprop(E, service(X)) :- string_to_atom(E.publication.publishedOn.name, Long), service(X, _, Long).
+jprop(E, title(X)) :- X=E.name.
+jprop(E, synopsis(X)) :- X=E.description.
+jprop(E, duration(X)) :- jprop(E, broadcast(ts(T1)-ts(T2))), X is (T2-T1).
+jprop(E, broadcast(ts(T1)-ts(T2))) :- P=E.publication, maplist(parse_time, [P.startDate, P.endDate], [T1,T2]).
+jprop(E, parent(PID, 'Brand', Name)) :-
+   get_dict(partOfSeries, E, P),
+   string_to_atom(P.identifier, PID),
+   Name=P.name.
+
+fetch_new_schedule_xml(S, sched(Updated, ETree)) :-
+   insist(uget(service_availability(S), [DOM])),
    xpath(DOM, /self(@updated), Updated),
-   xpath_interval([start_date, end_date], DOM, /self, Time),
    findall(E, dom_entry(DOM, E), Es),
    call(ord_list_to_assoc * sort(1, @<) * maplist(pairf(entry_pid)), Es, ETree).
 
@@ -84,8 +130,7 @@ prop(E, parent(PID, Type, Name)) :-
 
 schedule(latest(S), Schedule) :- service_schedule(S, Schedule).
 schedule(any,       Schedule) :- ordered_service_schedule(_, Schedule).
-schedule_timespan(sched(Time, _, _), Time).
-schedule_updated(sched(_, Updated, _), Updated).
+schedule_updated(sched(Updated, _), Updated).
 service_schedule(S, Schedule) :- service(S, _, _), once(ordered_service_schedule(S, Schedule)).
 ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
 
@@ -95,8 +140,8 @@ version_prop(_-I, duration(I.duration)).
 version_prop(C-_, title(C.title)).
 version_prop(C-_, summary(C.summary)).
 
-pid_entry(Mode, PID, E)  :- schedule(Mode, sched(_,_,ETree)), get_assoc(PID, ETree, E).
-service_entry(S, E) :- service_schedule(S, sched(_, _, ETree)), gen_assoc(_, ETree, E).
+pid_entry(Mode, PID, E)  :- schedule(Mode, sched(_, ETree)), get_assoc(PID, ETree, E).
+service_entry(S, E) :- service_schedule(S, sched(_, ETree)), gen_assoc(_, ETree, E).
 
 title_contains(Sub, E) :-
    xpath(E, title(text), T),
