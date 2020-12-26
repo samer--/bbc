@@ -24,7 +24,7 @@ xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A)
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
 get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
 get_as(xml, URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
-get_as(html, URL, DOM)  :- with_url(URL, In, load_html(In, DOM, [space(strict), cdata(string)])).
+get_as(html, URL, DOM)  :- with_url(URL, In, load_html(In, DOM, [space(preserve), cdata(string)])).
 get_as(pls, URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
 uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
