@@ -85,29 +85,38 @@ programme(Dir, E) -->
 service_tag(artist, 'Artist').
 service_tag(albumartist, 'AlbumArtist').
 
-db_find(Filters) --> {find(Filters, Artist, Tracks)}, foldl(found_track(Artist), Tracks).
+db_find(Filters) --> {find(Filters, Tracks)}, foldl(found_track, Tracks).
 db_count(Filters) -->
-   {find(Filters, _Artist, Tracks),
+   {find(Filters, Tracks),
     length(Tracks, NumTracks),
     aggregate_all(sum(D), (member(_-E, Tracks), entry_prop(E, duration(D))), TotalDur),
     round(TotalDur, IntDur)
    },
    foldl(report, [songs-NumTracks, playtime-IntDur]).
 
-found_track(Dir, TrackNo-E) -->
-	{insist(entry_tags(Dir, E, _PID, Tags, []))}, % pid_id(PID, Id)},
+found_track(TrackNo-E) -->
+	{entry_prop(E, service(S)),
+    service(S, _, Dir),
+    insist(entry_tags(Dir, E, _PID, Tags, []))
+   }, % pid_id(PID, Id)},
 	foldl(report, Tags), report('Track'-TrackNo).
 
-find(Filters, Artist, [Track]) :-
+find(Filters, [Track]) :-
    sort(Filters, [album-AlbumCodes, ArtistTag-ArtistCodes, track-TrackCodes]),
-   find([album-AlbumCodes, ArtistTag-ArtistCodes], Artist, Tracks),
+   find([album-AlbumCodes, ArtistTag-ArtistCodes], Tracks),
    number_codes(TrackNo, TrackCodes), nth1(TrackNo, Tracks, Track).
-find(Filters, Artist, Tracks) :-
+find(Filters, Tracks) :-
    sort(Filters, [album-AlbumCodes, ArtistTag-ArtistCodes]),
    service_tag(ArtistTag, _),
    atom_codes(Artist, ArtistCodes), string_codes(Album, AlbumCodes),
    service(S, _, Artist),
    findall(E, (service_entry(S, E), entry_prop(E, parent(_, _, Album))), Es),
+   sort_by(entry_date, Es, SortedEntries),
+   enumerate(SortedEntries, Tracks).
+find(Filters, Tracks) :-
+   sort(Filters, [album-AlbumCodes]),
+   string_codes(Album, AlbumCodes),
+   findall(E, (service_entry(_, E), entry_prop(E, parent(_, _, Album))), Es),
    sort_by(entry_date, Es, SortedEntries),
    enumerate(SortedEntries, Tracks).
 
@@ -121,16 +130,21 @@ db_list_new(genre, [], _) --> [].
 db_list_new(album, [], nothing) -->
    {setof(B, S^service_brand(S, B), Brands)},
    foldl(report('Album'), Brands).
+db_list_new(album, [], just(date)) -->
+   {album_reporter(just(date), Reporter),
+    setof(B, service_brand(_, B), Brands)},
+   foldl(Reporter, Brands).
 db_list_new(album, [], just(GroupBy)) -->
    {service_tag(GroupBy, ServiceTag)},
    {findall(SN-Brands, artist_albums(SN, Brands), ServiceNameBrands)},
-   foldl(emit_service_name_brands(ServiceTag), ServiceNameBrands).
-db_list_new(album, [ArtistTag-ArtistCodes], nothing) -->
+   foldl(report_service_name_brands(ServiceTag), ServiceNameBrands).
+db_list_new(album, [ArtistTag-ArtistCodes], GroupBy) -->
    { service_tag(ArtistTag, _),
      atom_codes(Artist, ArtistCodes),
-     artist_albums(Artist, Albums)
+     artist_albums(Artist, Albums),
+     album_reporter(GroupBy, Reporter)
    },
-   foldl(report('Album'), Albums).
+   foldl(Reporter, Albums).
 db_list_new(albumartist, Filters, nothing) -->
    {sort(Filters, [album-AlbumCodes, artist-ArtistCodes]),
     string_codes(Brand, AlbumCodes), atom_codes(Artist, ArtistCodes),
@@ -140,10 +154,14 @@ db_list_new(Tag, [], nothing) -->
    {service_tag(Tag, ServiceTag), findall(ServiceName, service(_, _, ServiceName), ServiceNames)},
    foldl(report(ServiceTag), ServiceNames).
 
+album_reporter(nothing, report('Album')).
+album_reporter(just(date), report_album_with('Date'-ThisYear)) :-
+   get_time(Now), format_time(atom(ThisYear),'%Y',Now).
+
 service_brand(S, B) :- service_entry(S, E), entry_prop(E, parent(_, 'Brand', B)).
 artist_albums(Ar, Als) :- service(S, _, Ar), setof(B, service_brand(S, B), Als).
-emit_service_name_brands(ServiceTag, SN-Brands) --> foldl(emit_brand(ServiceTag, SN), Brands).
-emit_brand(ServiceTag, S, B) --> report('Album'-B), report(ServiceTag-S).
+report_service_name_brands(ServiceTag, SN-Brands) --> foldl(report_album_with(ServiceTag-SN), Brands).
+report_album_with(TagVal, Album) --> report('Album'-Album), report(TagVal).
 
 % --- common db access for add and lsinfo ---
 ensure_service_schedule(S) :- service_schedule(S, _) -> true; fetch_new_schedule(S).
