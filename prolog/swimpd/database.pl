@@ -1,4 +1,4 @@
-:- module(database, [is_programme/1, pid_id/2, id_pid/2, lsinfo//1, addid//2, update_db/1, db_stats/1]).
+:- module(database, [is_programme/1, pid_id/2, id_pid/2, lsinfo//1, addid//2, db_update/1, db_stats/1, db_count//1, db_find//1, db_list//1]).
 
 /* <module> BBC database interface for MPD server
 
@@ -9,6 +9,7 @@
 
 :- use_module(library(memo)).
 :- use_module(library(dcg_core),  [maybe/3]).
+:- use_module(library(listutils), [enumerate/2]).
 :- use_module(state,  [state/2, set_state/2]).
 :- use_module(tools,  [report//1, report//2, maybe/2, maybe//2, spawn/1]).
 :- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
@@ -22,15 +23,16 @@ id_pid(Id,PID) :- once(browse(pid_id(PID, Id))).
 is_programme(PID) :- \+service(PID, _, _).
 
 % --- update and stats ---
-update_db([]) :- forall(service(S, _, _), fetch_new_schedule(S)), set_with(db_stats, db_stats).
-update_db([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S), set_with(db_stats, db_stats).
-db_stats(Stats) :- state(db_stats, Stats) -> true; set_with(db_stats, db_stats), db_stats(Stats).
+db_update([]) :- forall(service(S, _, _), fetch_new_schedule(S)), set_with(db_stats, db_stats).
+db_update([ServiceName]) :- service(S, _, ServiceName), fetch_new_schedule(S), set_with(db_stats, db_stats).
+db_stats(Stats) :- state(db_stats, Stats) -> true; set_with(db_stats, db_stats), db_stats(Stats). % FIXME
 set_with(K, P) :- call(P, _, V), set_state(K, V).
 
-db_stats(_, [artists-1, albums-M, songs-N, db_playtime-Dur]) :-
+db_stats(_, [artists-NumServices, albums-M, songs-N, db_playtime-Dur]) :-
    findall(B-D, brand_dur(B, D), Items), length(Items, N),
+   aggregate_all(count, service(_, _, _), NumServices),
    aggregate_all(count, distinct(PP,  member(just(PP-_)-_, Items)), M),
-   aggregate_all(sum(D), member(_-D, Items), Dur).
+   aggregate_all(sum(D), member(_-D, Items), DurFloat), round(DurFloat, Dur).
 brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
 
 % --- adding to playlist by path  ---
@@ -40,12 +42,12 @@ addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Se
 addid(['PID', PID], just(Id)) --> {pid_id(PID, Id)}, add_pid(PID).
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
 addid(['In Progress', PID], just(Id)) --> {pid_entry(any, PID, E), pid_id(PID, Id)}, add('In Progress', E).
-addid([LongName, PID], just(Id)) -->
-   {longname_service(LongName, S), pid_entry(latest(S), PID, E), pid_id(PID, Id)},
-   add(LongName, E).
+addid([ServiceName, PID], just(Id)) -->
+   {service(S, _, ServiceName), ensure_service_schedule(S),  pid_entry(latest(S), PID, E), pid_id(PID, Id)},
+   add(ServiceName, E).
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, =(URL), Tags)].
-add(LongName, E) --> {entry_tags(LongName, E, PID, Tags, [])}, [song(PID, database:entry_url(E), Tags)].
+add(ServiceName, E) --> {entry_tags(ServiceName, E, PID, Tags, [])}, [song(PID, database:entry_url(E), Tags)].
 entry_url(E, URL) :- entry_xurl(_, E, _-URL).
 
 add_pid(PID) --> [song(PID, database:version_url(V), [file-PID|Tags])], {pid_version(PID, V), version_tags(V, Tags)}.
@@ -62,10 +64,11 @@ lsinfo([Dir]) --> {directory(Dir, Items)}, foldl(programme(Dir), Items).
 directory('In Progress', Items) :-
    findall(E, (state(position(PID), _), once(pid_entry(any, PID, E))), Items).
 directory(ServiceName, SortedItems) :-
-	longname_service(ServiceName, S),
+	service(S, _, ServiceName),
+   ensure_service_schedule(S),
    findall(E, service_entry(S, E), Items),
    sort_by(entry_sortkey, Items, SortedItems).
-entry_sortkey(E, k(SortedParents, Date)) :- entry_prop(E, broadcast(Date)), entry_parents(E, SortedParents).
+entry_sortkey(E, k(SortedParents, Date)) :- entry_date(E, Date), entry_parents(E, SortedParents).
 
 live_radio(S-ServiceName) -->
    {live_service_tags(S-ServiceName, Tags), pid_id(S, Id)},
@@ -78,10 +81,74 @@ programme(Dir, E) -->
 	{insist(entry_tags(Dir, E, PID, Tags, [])), pid_id(PID, Id)},
 	foldl(report, Tags), report('Id'-Id).
 
+% --- list by tag ---
+service_tag(artist, 'Artist').
+service_tag(albumartist, 'AlbumArtist').
+
+db_find(Filters) --> {find(Filters, Artist, Tracks)}, foldl(found_track(Artist), Tracks).
+db_count(Filters) -->
+   {find(Filters, _Artist, Tracks),
+    length(Tracks, NumTracks),
+    aggregate_all(sum(D), (member(_-E, Tracks), entry_prop(E, duration(D))), TotalDur),
+    round(TotalDur, IntDur)
+   },
+   foldl(report, [songs-NumTracks, playtime-IntDur]).
+
+found_track(Dir, TrackNo-E) -->
+	{insist(entry_tags(Dir, E, _PID, Tags, []))}, % pid_id(PID, Id)},
+	foldl(report, Tags), report('Track'-TrackNo).
+
+find(Filters, Artist, [Track]) :-
+   sort(Filters, [album-AlbumCodes, ArtistTag-ArtistCodes, track-TrackCodes]),
+   find([album-AlbumCodes, ArtistTag-ArtistCodes], Artist, Tracks),
+   number_codes(TrackNo, TrackCodes), nth1(TrackNo, Tracks, Track).
+find(Filters, Artist, Tracks) :-
+   sort(Filters, [album-AlbumCodes, ArtistTag-ArtistCodes]),
+   service_tag(ArtistTag, _),
+   atom_codes(Artist, ArtistCodes), string_codes(Album, AlbumCodes),
+   service(S, _, Artist),
+   findall(E, (service_entry(S, E), entry_prop(E, parent(_, _, Album))), Es),
+   sort_by(entry_date, Es, SortedEntries),
+   enumerate(SortedEntries, Tracks).
+
+entry_date(E, Date) :- entry_prop(E, broadcast(Date)).
+
+
+db_list(list(Tag, Filters, GroupBy)) --> db_list_new(Tag, Filters, GroupBy).
+db_list(albums_by_artist(Artist)) --> {artist_albums(Artist, Albums)}, foldl(report('Album'), Albums).
+
+db_list_new(genre, [], _) --> [].
+db_list_new(album, [], nothing) -->
+   {setof(B, S^service_brand(S, B), Brands)},
+   foldl(report('Album'), Brands).
+db_list_new(album, [], just(GroupBy)) -->
+   {service_tag(GroupBy, ServiceTag)},
+   {findall(SN-Brands, artist_albums(SN, Brands), ServiceNameBrands)},
+   foldl(emit_service_name_brands(ServiceTag), ServiceNameBrands).
+db_list_new(album, [ArtistTag-ArtistCodes], nothing) -->
+   { service_tag(ArtistTag, _),
+     atom_codes(Artist, ArtistCodes),
+     artist_albums(Artist, Albums)
+   },
+   foldl(report('Album'), Albums).
+db_list_new(albumartist, Filters, nothing) -->
+   {sort(Filters, [album-AlbumCodes, artist-ArtistCodes]),
+    string_codes(Brand, AlbumCodes), atom_codes(Artist, ArtistCodes),
+    service(S, _, Artist), once(service_brand(S, Brand))},
+   report('AlbumArtist'-Artist).
+db_list_new(Tag, [], nothing) -->
+   {service_tag(Tag, ServiceTag), findall(ServiceName, service(_, _, ServiceName), ServiceNames)},
+   foldl(report(ServiceTag), ServiceNames).
+
+service_brand(S, B) :- service_entry(S, E), entry_prop(E, parent(_, 'Brand', B)).
+artist_albums(Ar, Als) :- service(S, _, Ar), setof(B, service_brand(S, B), Als).
+emit_service_name_brands(ServiceTag, SN-Brands) --> foldl(emit_brand(ServiceTag, SN), Brands).
+emit_brand(ServiceTag, S, B) --> report('Album'-B), report(ServiceTag-S).
+
 % --- common db access for add and lsinfo ---
-longname_service(LongName, S) :- service(S, _, LongName), (service_schedule(S, _) -> true; fetch_new_schedule(S)).
+ensure_service_schedule(S) :- service_schedule(S, _) -> true; fetch_new_schedule(S).
 live_services(Services) :- findall(S-SLN, live_service(S, SLN), Services).
-live_service(S, LongName) :- service(S, _, LongName).
+live_service(S, ServiceName) :- service(S, _, ServiceName).
 live_service(resonance, 'Resonance FM').
 live_url(S, URL) :- service_live_url(S, URL).
 live_url(resonance, 'http://stream.resonance.fm:8000/resonance').

@@ -2,16 +2,16 @@
 
 :- use_module(library(dcg_core)).
 :- use_module(library(dcg_pair)).
-:- use_module(library(dcg_codes), [fmt//2]).
+:- use_module(library(dcg_codes), [fmt//2, ctype//1]).
 :- use_module(library(data/pair), [fsnd/3]).
-:- use_module(library(snobol),    [any//1, notany//1, break//1, arb//0]).
+:- use_module(library(snobol),    [any//1, notany//1, break//1, arb//0, arbno//1]).
 :- use_module(library(insist),    [insist/1]).
 :- use_module(library(callutils), [true2/2]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
 :- use_module(protocol, [notify_all/1]).
-:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1, db_stats/1]).
+:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1, db_find//1, db_list//1, db_stats/1]).
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
@@ -95,8 +95,13 @@ command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output'
 command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
-command(list,    arb) :-> [].
+command(list,     list_args(ListArgs))       :-> db_list(ListArgs).
+command(find,     foldl(tag_value, Filters)) :-> db_find(Filters).
+command(count,    foldl(tag_value, Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
+
+list_args(albums_by_artist(Artist)) --> a("album"), a(atom(Artist)).
+list_args(list(Tag, Filters, GroupBy)) --> a(tag(Tag)), foldl(tag_value, Filters), maybe(group_by, GroupBy).
 
 % -- interaction with state --
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
@@ -114,8 +119,8 @@ reading_queue(Action, _-Q) --> call(Action, Q).
 uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
 
 stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), state(dbtime, D), round(D,DD), db_stats(DBStats).
-update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
-update_and_notify(Path) :- update_db(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
+update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
+update_and_notify(Path) :- db_update(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
 
 enact(volume, [], _, _) :- !.
 enact(volume, [mixer], _, V) :- !, set_volume(V).
@@ -243,3 +248,7 @@ maybe_quoted_path(Path) --> {Path=[]}; " ", quoted(path(Path)).
 path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
 path_component(Dir) --> +(notany(`/`)) // atom(Dir).
+tag(Tag) --> +(ctype(graph)) // atom(Tag), {Tag \= group}. % FIXME: make definite
+tag_value(Tag-Value) --> a(tag(Tag)), a(list(Value)). % FIXME: typed tags?
+group_by(G) --> a("group"), a(tag(G)).
+
