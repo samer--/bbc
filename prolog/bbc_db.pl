@@ -37,7 +37,7 @@ service(bbc_radio_two,   'R2', 'BBC Radio 2').
 service(bbc_radio_three, 'R3', 'BBC Radio 3').
 service(bbc_radio_fourfm,'R4', 'BBC Radio 4 FM').
 service(bbc_radio_four_extra, 'R4X', 'BBC Radio 4 Extra').
-service(bbc_6music, '6Music', 'BBC 6 Music').
+service(bbc_6music,      '6Music', 'BBC 6 Music').
 service(bbc_world_service, 'World', 'BBC World Service').
 
 service_live_url(S, URL) :-
@@ -56,7 +56,7 @@ service_pid(bbc_radio_four_extra, p00fzl7l).
 service_pid(bbc_6music,           p00fzl65).
 service_pid(bbc_world_service,    p00fzl9p).
 
-service_schedule(Suffix, S, html, 'http://www.bbc.co.uk/schedules/~s~s'-[PID, Suffix]) :- service_pid(S, PID).
+service_web_sched(Suffix, S, html, 'http://www.bbc.co.uk/schedules/~s~s'-[PID, Suffix]) :- service_pid(S, PID).
 
 service_availability(S, xml, 'http://www.bbc.co.uk/radio/aod/availability/~s.xml'-[S]) :- service(S).
 playlist(PID, json, 'http://www.bbc.co.uk/programmes/~s/playlist.json'-[PID]).
@@ -86,7 +86,7 @@ assoc_merge(A1, A2, A3) :-
 
 time_etree(S, Time, ETree) :-
    format_time(atom(YW1), '/%G/w%V', Time),
-   uget(service_schedule(YW1, S), [DOM]),
+   uget(service_web_sched(YW1, S), [DOM]),
    xpath(DOM, body/div(@id='orb-modules')//script(@type='application/ld+json',content), [X]),
    atom_json_dict(X, T, []),
    get_dict('@graph', T, Graph),
@@ -94,9 +94,10 @@ time_etree(S, Time, ETree) :-
    call(ord_list_to_assoc * sort(1, @<) * maplist(pairf(entry_pid)), Es, ETree).
 
 graph_entry(Graph, entry(Props)) :- member(E, Graph), findall(Prop, jprop(E, Prop), Props).
-jprop(E, pid(X)) :- string_to_atom(E.identifier, X).
-jprop(E, service(X)) :- string_to_atom(E.publication.publishedOn.name, Long), service(X, _, Long).
-jprop(E, title(X)) :- X=E.name.
+jprop(E, pid(X))      :- string_to_atom(E.identifier, X).
+jprop(E, service(X))  :- string_to_atom(E.publication.publishedOn.name, Long), service(X, _, Long).
+jprop(E, image(X))    :- get_dict(image, E, X).
+jprop(E, title(X))    :- X=E.name.
 jprop(E, synopsis(X)) :- X=E.description.
 jprop(E, duration(X)) :- jprop(E, broadcast(ts(T1)-ts(T2))), X is (T2-T1).
 jprop(E, broadcast(ts(T1)-ts(T2))) :- P=E.publication, maplist(parse_time, [P.startDate, P.endDate], [T1,T2]).
@@ -114,11 +115,11 @@ fetch_new_schedule_xml(S, sched(Updated, ETree)) :-
 entry_pid(E, PID) :- entry_prop(E, pid(PID)).
 dom_entry(DOM, entry(Props)) :- xpath(DOM, /schedule/entry, E), findall(Prop, prop(E, Prop), Props).
 
-prop(E, key(X)) :- xpath(E, key(text), X).
-prop(E, vpid(X)) :- xpath(E, /self(@pid), X).
-prop(E, pid(X)) :- xpath(E, pid(text), X).
-prop(E, title(X)) :- xpath(E, title(text), X).
-prop(E, service(X)) :- xpath(E, service(text), X).
+prop(E, key(X))      :- xpath(E, key(text), X).
+prop(E, vpid(X))     :- xpath(E, /self(@pid), X).
+prop(E, pid(X))      :- xpath(E, pid(text), X).
+prop(E, title(X))    :- xpath(E, title(text), X).
+prop(E, service(X))  :- xpath(E, service(text), X).
 prop(E, synopsis(X)) :- xpath(E, synopsis(text), X).
 prop(E, duration(X)) :- xpath(E, broadcast(@duration), Y), atom_number(Y,X).
 prop(E, availability(X)) :- xpath_interval([start, end], E, availability, X).
