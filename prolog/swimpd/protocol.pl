@@ -5,7 +5,7 @@
 :- use_module(library(dcg_pair)).
 :- use_module(tools, [in/2, quoted//2, atom//1, report//2, parse_head//2, registered/2, thread/2]).
 
-:- multifile command//2.
+:- multifile command//2, command//3.
 
 %! mpd_interactor is det.
 % Run MPD client interaction using the current input and output Prolog streams.
@@ -81,6 +81,7 @@ output(R) :-
 :- meta_predicate do_and_cont(1,+).
 do_and_cont(G, Pending) :- call(G, Reply), reply(Reply), normal_wait(Pending).
 execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail)), !.
+execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail, _Binary)), !. % FIXME: emit binary here
 execute(Ref, Head, _, ack(Ref, err(99, 'Failed on ~s', [Head]))).
 
 % -- notification system ---
