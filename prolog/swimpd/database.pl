@@ -1,4 +1,5 @@
-:- module(database, [is_programme/1, pid_id/2, id_pid/2, lsinfo//1, addid//2, db_update/1, db_stats/1, db_count//1, db_find//1, db_list//3]).
+:- module(database, [is_programme/1, pid_id/2, id_pid/2, lsinfo//1, addid//2, db_update/1, db_image/3,
+                     db_stats/1, db_count//1, db_find//2, db_find/3, db_list//3]).
 
 /* <module> BBC database interface for MPD server
 
@@ -47,7 +48,7 @@ addid([ServiceName, PID], just(Id)) -->
    add(ServiceName, E).
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, =(URL), Tags)].
-add(ServiceName, E) --> {entry_tags(ServiceName, E, PID, Tags, [])}, [song(PID, database:entry_url(E), Tags)].
+add(Dir, E) --> {entry_tags(Dir, E, PID, Tags, [])}, [song(PID, database:entry_url(E), Tags)].
 entry_url(E, URL) :- entry_xurl(_, E, _-URL).
 
 add_pid(PID) --> [song(PID, database:version_url(V), [file-PID|Tags])], {pid_version(PID, V), version_tags(V, Tags)}.
@@ -85,7 +86,8 @@ programme(Dir, E) -->
 service_tag(artist, 'Artist').
 service_tag(albumartist, 'AlbumArtist').
 
-db_find(Filters) --> {find(Filters, Tracks)}, foldl(found_track, Tracks).
+db_find(_, Filters, Paths) :- find(Filters, Tracks), maplist(track_path, Tracks, Paths).
+db_find(_, Filters) --> {find(Filters, Tracks)}, foldl(found_track, Tracks).
 db_count(Filters) -->
    { find(Filters, Tracks),
      length(Tracks, NumTracks),
@@ -94,10 +96,11 @@ db_count(Filters) -->
    },
    foldl(report, [songs-NumTracks, playtime-IntDur]).
 
+entries_tracks(Es, Tracks) :- call(enumerate * sort_by(entry_date), Es, Tracks).
+track_path(_-E, [SN, PID]) :- maplist(entry_prop(E), [pid(PID), service(SN)]).
 found_track(TrackNo-E) -->
 	{ entry_prop(E, service(ServiceName)),
-     insist(entry_tags(ServiceName, E, _PID, Tags, []))
-   },
+     insist(entry_tags(ServiceName, E, _PID, Tags, [])) },
 	foldl(report, Tags), report('Track'-TrackNo).
 
 find(Filters, [Track]) :-
@@ -105,25 +108,18 @@ find(Filters, [Track]) :-
    find(FiltersRem, Tracks), nth1(TrackNo, Tracks, Track).
 find(Filters, Tracks) :-
    sort(Filters, [album-Album]),
-   service_album_tracks(_, Album, Tracks).
+   findall(E, (service_entry(_, E), entry_prop(E, parent(_, _, Album, _))), Es),
+   entries_tracks(Es, Tracks).
 find(Filters, Tracks) :-
    sort(Filters, [album-Album, ArtistTag-Artist]),
    service_tag(ArtistTag, _), service(S, Artist),
-   service_album_tracks(S, Album, Tracks).
+   findall(E, (service_entry(S, E), entry_prop(E, parent(_, _, Album, _))), Es),
+   entries_tracks(Es, Tracks).
 find(Filters, Tracks) :-
    sort(Filters, [ArtistTag-Artist]),
    service_tag(ArtistTag, _), service(S, Artist),
-   service_tracks(S, Tracks).
-
-service_album_tracks(S, Album, Tracks) :-
-   findall(E, (service_entry(S, E), entry_prop(E, parent(_, _, Album))), Es),
-   sort_by(entry_date, Es, SortedEntries),
-   enumerate(SortedEntries, Tracks).
-service_tracks(S, Tracks) :-
    findall(E, service_entry(S, E), Es),
-   sort_by(entry_date, Es, SortedEntries),
-   enumerate(SortedEntries, Tracks).
-
+   entries_tracks(Es, Tracks).
 
 db_list(genre, [], _) --> [].
 db_list(album, [], just(GroupBy)) -->
@@ -153,25 +149,33 @@ album_reporter(nothing, report('Album')).
 album_reporter(just(date), report_album_with('Date'-ThisYear)) :-
    get_time(Now), format_time(atom(ThisYear),'%Y',Now).
 
-service_brand(S, B) :- service_entry(S, E), entry_prop(E, parent(_, 'Brand', B)).
+service_brand(S, B) :- service_entry(S, E), entry_prop(E, parent(_, 'Brand', B, _)).
 artist_albums(Ar, Als) :- service(S, Ar), setof(B, service_brand(S, B), Als).
 report_service_name_brands(ServiceTag, SN-Brands) --> foldl(report_album_with(ServiceTag-SN), Brands).
 report_album_with(TagVal, Album) --> report('Album'-Album), report(TagVal).
 
+db_image(Kind, [Dir, PID], URL) :- service(S, Dir), pid_entry(latest(S), PID, E), entry_image(Kind, E, URL).
+entry_image(episode, E, URL) :- entry_prop(E, image(URL)).
+entry_image(series, E, URL) :- entry_prop(E, parent(_, _, _, Props)), member(image(URL), Props).
+
 % --- common db access for add and lsinfo ---
 ensure_service_schedule(S) :- service_updated(S, _) -> true; fetch_new_schedule(S).
+
 live_services(Services) :- findall(S-SLN, live_service(S, SLN), Services).
 live_service(S, ServiceName) :- service(S, ServiceName).
 live_service(resonance, 'Resonance FM').
 live_url(S, URL) :- service_live_url(S, URL).
 live_url(resonance, 'http://stream.resonance.fm:8000/resonance').
 live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', SLN], File).
+
 entry_date(E, Date) :- entry_prop(E, broadcast(Date)).
 entry_tags(Dir, E, PID) -->
-	[file-File], {entry_prop(E, pid(PID)), path_file([Dir, PID], File)},
-   tag(title_and_maybe_album(Dir, PID), E), foldl(maybe, [tag(broadcast, E), tag(availability, E)]),
-	['Comment'-Syn, duration-Dur], {maplist(entry_prop(E), [synopsis(Syn), duration(Dur)])}.
+   {maplist(entry_prop(E), [pid(PID), synopsis(Syn), duration(Dur)]), path_file([Dir, PID], File)},
+	[file-File, 'Artist'-Dir, 'Comment'-Syn, duration-Dur],
+   tag(title_and_maybe_album(Dir, PID), E),
+   foldl(maybe, [tag(service, E), tag(broadcast, E), tag(availability, E)]).
 
+tag(service, E)      --> {entry_prop(E, service(Artist))}, ['Artist'-Artist].
 tag(broadcast, E)    --> {entry_prop(E, broadcast(B)), interval_times(B,T,_), ts_string(T,Broadcast)}, ['Date'-Broadcast].
 tag(availability, E) --> {entry_prop(E, availability(A)), interval_times(A,_,T), ts_string(T,Until)}, ['AvailableUntil'-Until].
 tag(title_and_maybe_album(Dir, PID), E) -->

@@ -39,7 +39,7 @@ service(p00fzl8t, bbc_radio_three,      'BBC Radio 3').
 service(p00fzl7j, bbc_radio_fourfm,     'BBC Radio 4 FM').
 service(p00fzl7l, bbc_radio_four_extra, 'BBC Radio 4 Extra').
 service(p00fzl65, bbc_6music,           'BBC 6 Music').
-service(p00fzl9p, bbc_world_service,    'BBC World Service').
+service(p00fzl9p, bbc_world_service,    'BBC World Service Online').
 
 % --- getting the schedules -------------------------------------------------
 
@@ -67,15 +67,21 @@ service_time_entry(S, Time, entry(Props)) :-
 
 jprop(E, pid(X))      :- string_to_atom(E.identifier, X).
 jprop(E, service(X))  :- string_to_atom(E.publication.publishedOn.name, X).
+jprop(E, episode(X))  :- get_dict(episodeNumber, E, X), X \= null.
+jprop(E, date(X))     :- get_dict(datePublished, E, X).
 jprop(E, image(X))    :- get_dict(image, E, X).
 jprop(E, title(X))    :- X=E.name.
 jprop(E, synopsis(X)) :- X=E.description.
 jprop(E, duration(X)) :- jprop(E, broadcast(ts(T1)-ts(T2))), X is (T2-T1).
 jprop(E, broadcast(ts(T1)-ts(T2))) :- P=E.publication, maplist(parse_time, [P.startDate, P.endDate], [T1,T2]).
-jprop(E, parent(PID, 'Brand', Name)) :-
+jprop(E, parent(PID, 'Brand', Name, Props)) :-
    get_dict(partOfSeries, E, P),
+   findall(Prop, parent_prop(P, Prop), Props),
    string_to_atom(P.identifier, PID),
    string_to_atom(P.name, Name).
+
+parent_prop(P, synopsis(X)) :- get_dict(description, P, X).
+parent_prop(P, image(X))    :- get_dict(image, P, X).
 
 % -- old XML feed
 service_xml_feed(S, xml,  'http://www.bbc.co.uk/radio/aod/availability/~s.xml'-[P]) :- service(S, P).
@@ -96,7 +102,7 @@ prop(E, duration(X)) :- xpath(E, broadcast(@duration), Y), atom_number(Y,X).
 prop(E, availability(X)) :- xpath_interval([start, end], E, availability, X).
 prop(E, broadcast(X)) :- xpath_interval([start, end], E, broadcast, X).
 prop(E, link(F,URL)) :- xpath(E, links/link(@transferformat=F,text), URL).
-prop(E, parent(PID, Type, Name)) :-
+prop(E, parent(PID, Type, Name, [])) :-
    xpath(E, parents/parent, P),
    maplist(xpath(P), [/self(@pid), /self(@type), /self(text)], [PID, Type, Name]). % FIXME: Name must be atom
 
@@ -123,12 +129,12 @@ entry_vpid(E, X) :- entry_prop(E, pid(PID)), pid_version(PID, V), version_prop(V
 entry_xurl(Method, E, XURL) :- prog_xurl(Method, entry(E), XURL).
 
 entry_parents(E, SortedParents) :-
-   findall(T-N, entry_prop(E, parent(_, T, N)), Parents),
+   findall(T-N, entry_prop(E, parent(_, T, N, _)), Parents),
    sort_by(parent_type_priority * fst, Parents, SortedParents).
 parent_type_priority('Brand', 1).
 parent_type_priority('Series', 2).
 
-entry_maybe_parent(T, E, just(PPID-Name)) :- entry_prop(E, parent(PPID, T, Name)), !.
+entry_maybe_parent(T, E, just(PPID-Name)) :- entry_prop(E, parent(PPID, T, Name, _)), !.
 entry_maybe_parent(_, _, nothing).
 
 entry_title_contains(Sub, E) :-

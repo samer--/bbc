@@ -1,5 +1,6 @@
 :- module(swimpd, [mpd_init/0, restore_state/1, save_state/1, save_state/0]).
 
+:- use_module(library(http/http_open)).
 :- use_module(library(dcg_core)).
 :- use_module(library(dcg_pair)).
 :- use_module(library(dcg_codes), [fmt//2, ctype//1]).
@@ -10,8 +11,9 @@
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
-:- use_module(protocol, [notify_all/1]).
-:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1, db_find//1, db_list//3, db_stats/1]).
+:- use_module(protocol, [reply_phrase/1, notify_all/1, reply_binary/4]).
+:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1,
+                         db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
@@ -23,15 +25,20 @@
    Core
       seek, CLP approach?
       lightweight threads
+      more efficient artist-album-track database view
 
    Control
       auto next as well as single (handle stored position correctly too)
+      rewind if playing track where current position is at end
       Better seekable timeline for radio streams
       Stop GST player after some time to release audio device
 
    State management:
       multiple sessions
       persistence
+
+   Protocol:
+      return album and song images
  */
 
 %! mpd_init is det.
@@ -60,6 +67,7 @@ revert(V) :-
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
 term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
 
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
@@ -90,18 +98,31 @@ command(playlistid,    [])                 :-> reading_state(queue, reading_queu
 command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queue(plchanges(V))).
 command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, arb) :-> [].
-command(tagtypes, []) :-> foldl(report(tagtype), ['Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
+command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
 command(list,     list_args(Tag, Filters, GroupBy)) :-> db_list(Tag, Filters, GroupBy).
-command(find,     foldl(tag_value, Filters)) :-> db_find(Filters). % FIXME: implement findadd
-command(count,    foldl(tag_value, Filters)) :-> db_count(Filters). % group not supported
+command(find,     find_args(Filters)) :-> db_find(true, Filters).
+command(search,   find_args(Filters)) :-> db_find(false, Filters).
+command(findadd,  find_args(Filters)) :-> {db_find(true, Filters, Files), add_multi(Files)}.
+command(searchadd,find_args(Filters)) :-> {db_find(false, Filters, Files), add_multi(Files)}.
+command(count,    find_args(Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
 
+command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(series, Path, URL)}.
+command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
+
+find_args(Filters) --> foldl(tag_value, Filters).
 list_args(album, [artist-Artist], nothing) --> a("album"), a(atom(Artist)).
 list_args(Tag, Filters, GroupBy) --> a(tag(Tag)), foldl(tag_value, Filters), maybe(group_by, GroupBy).
+
+reply_url_bin(URL, Offset) :-
+   setup_call_cleanup(
+      http_open(URL, Stream, [header(content_type, Type), size(Size), range(bytes(Offset, end))]),
+      (Total is Offset + Size, reply_binary(Type, Total, Size, Stream)),
+      close(Stream)).
 
 % -- interaction with state --
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
@@ -144,8 +165,9 @@ currentsong(Songs, ps(Pos, _)) --> {nth0(Pos, Songs, Song)}, report_song_info(Po
 
 report_song_info(Pos-song(PID, _, Tags)) --> {pid_id(PID, Id)}, foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
 
-add_at(nothing, Path, Id) :- updating_queue_state(\< \< add_at_end(addid(Path, Id))).
-add_at(just(Pos), Path, Id) :- reordering_queue(insert_at(Pos, addid(Path, Id))).
+add_multi(Files) :- updating_queue_state(\< \< add_at_end(foldl(addid, Files, _))).
+add_at(nothing, File, Id) :- updating_queue_state(\< \< add_at_end(addid(File, Id))).
+add_at(just(Pos), File, Id) :- reordering_queue(insert_at(Pos, addid(File, Id))).
 add_at_end(P, Songs1, Songs2) :- phrase((list(Songs1), P), Songs2).
 
 copy --> [X] <\> [X].
