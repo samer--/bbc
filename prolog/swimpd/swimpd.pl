@@ -38,7 +38,7 @@
       persistence
 
    Protocol:
-      return album and song images
+      clearerror (check error in status?) consume, single, mutliple group
  */
 
 %! mpd_init is det.
@@ -69,7 +69,6 @@ revert(V) :-
 term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
 term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
 
-% TODO: clearerror (check error in status?) consume, single, mutliple group
 command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
 command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.

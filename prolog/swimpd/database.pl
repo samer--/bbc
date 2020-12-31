@@ -4,7 +4,7 @@
 /* <module> BBC database interface for MPD server
 
    @todo
-      Artist = ? channel? BBC? Folders by brand, by broadcast date
+      subfolders by week
       Shelf for keeping programmes
  */
 
