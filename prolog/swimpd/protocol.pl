@@ -10,7 +10,7 @@
 %! mpd_interactor is det.
 % Run MPD client interaction using the current input and output Prolog streams.
 mpd_interactor :-
-   output("OK MPD 0.20.0"), thread_self(Self),
+   output("OK MPD 0.21.26"), thread_self(Self),
    setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill_transducer)))]),
                       catch(transduce(Id), kill_transducer, true), cleanup_client(Id)).
 
@@ -65,7 +65,7 @@ sub_reply(silent).
 sub_reply(list_ok) :- output("list_OK").
 
 reply_phrase(P) :-
-   time(phrase(P, Codes)), format("~s", [Codes]),
+   phrase(P, Codes), format("~s", [Codes]),
    debug(mpd(reply), "<< ~s|", [Codes]).
 
 reply(ok) :- output("OK").
@@ -84,7 +84,7 @@ with_binary_output(S, G) :- setup_call_cleanup(set_stream(S, type(binary)), G, s
 
 % -- command execution --
 :- meta_predicate do_and_cont(1,+).
-do_and_cont(G, Pending) :- call(G, Reply), reply(Reply), normal_wait(Pending).
+do_and_cont(G, Pending) :- time(call(G, Reply)), reply(Reply), normal_wait(Pending).
 execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail)), !.
 execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail, Binary)), !, call(Binary).
 execute(Ref, Head, _, ack(Ref, err(99, 'Failed on ~s', [Head]))).
