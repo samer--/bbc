@@ -122,7 +122,7 @@ find(Filters, Tracks) :-
    entries_tracks(Es, Tracks).
 
 db_list(genre, [], _) --> [].
-db_list(album, [], just(GroupBy)) -->
+db_list(album, [], [GroupBy]) -->
    { service_tag(GroupBy, ServiceTag), !,
      findall(SN-Brands, artist_albums(SN, Brands), ServiceNameBrands) },
    foldl(report_service_name_brands(ServiceTag), ServiceNameBrands).
@@ -136,17 +136,17 @@ db_list(album, [ArtistTag-Artist], GroupBy) -->
      artist_albums(Artist, Albums),
      album_reporter(GroupBy, Reporter) },
    foldl(Reporter, Albums).
-db_list(albumartist, Filters, nothing) -->
+db_list(albumartist, Filters, []) -->
    { sort(Filters, [album-Album, artist-Artist]),
      service(S, Artist), once(service_brand(S, Album)) },
    report('AlbumArtist'-Artist).
-db_list(Tag, [], nothing) -->
+db_list(Tag, [], []) -->
    { service_tag(Tag, ServiceTag),
      findall(ServiceName, service(_, ServiceName), ServiceNames) },
    foldl(report(ServiceTag), ServiceNames).
 
-album_reporter(nothing, report('Album')).
-album_reporter(just(date), report_album_with('Date'-ThisYear)) :-
+album_reporter([], report('Album')).
+album_reporter([date], report_album_with('Date'-ThisYear)) :-
    get_time(Now), format_time(atom(ThisYear),'%Y',Now).
 
 service_brand(S, B) :- service_entry(S, E), entry_prop(E, parent(_, 'Brand', B, _)).

@@ -116,8 +116,8 @@ command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, 
 command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
 
 find_args(Filters) --> foldl(tag_value, Filters).
-list_args(album, [artist-Artist], nothing) --> a("album"), a(atom(Artist)).
-list_args(Tag, Filters, GroupBy) --> a(tag(Tag)), foldl(tag_value, Filters), maybe(group_by, GroupBy).
+list_args(album, [artist-Artist], []) --> a("album"), a(atom(Artist)).
+list_args(Tag, Filters, GroupBy) --> a(tag(Tag)), foldl(tag_value, Filters), foldl(group_by, GroupBy).
 
 reply_url_bin(URL, Offset) :-
    setup_call_cleanup(
