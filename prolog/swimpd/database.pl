@@ -171,7 +171,7 @@ live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', S
 entry_date(E, Date) :- entry_prop(E, broadcast(Date)).
 entry_tags(Dir, E, PID) -->
    {maplist(entry_prop(E), [pid(PID), synopsis(Syn), duration(Dur)]), path_file([Dir, PID], File)},
-	[file-File, 'Artist'-Dir, 'Comment'-Syn, duration-Dur],
+	[file-File, 'Comment'-Syn, duration-Dur],
    tag(title_and_maybe_album(Dir, PID), E),
    foldl(maybe, [tag(service, E), tag(broadcast, E), tag(availability, E)]).
 
