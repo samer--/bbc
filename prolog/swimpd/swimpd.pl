@@ -69,7 +69,7 @@ revert(V) :-
 term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
 term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
 
-command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
+command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
 command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.
 command(add,      a(path(Path)))   :-> {add_at(nothing, Path, _)}.
@@ -99,6 +99,7 @@ command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queu
 command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
+command(tagtypes, foldl(a(atom), [Cmd|Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
