@@ -11,7 +11,7 @@
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
-:- use_module(protocol, [reply_phrase/1, notify_all/1, reply_binary/4]).
+:- use_module(protocol, [notify_all/1, reply_binary/4]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1,
                          db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
