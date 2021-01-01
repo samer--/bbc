@@ -1,6 +1,7 @@
 :- module(swimpd, [mpd_init/0, restore_state/1, save_state/1, save_state/0]).
 
 :- use_module(library(http/http_open)).
+:- use_module(library(apply), [include/3, exclude/3]).
 :- use_module(library(dcg_core)).
 :- use_module(library(dcg_pair)).
 :- use_module(library(dcg_codes), [fmt//2, ctype//1]).
@@ -11,13 +12,13 @@
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
-:- use_module(protocol, [notify_all/1, reply_binary/4]).
+:- use_module(protocol, [all_tags/1, notify_all/1, reply_binary/4]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1,
                          db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
-                         thread/2, registered/2, spawn/1, setup_stream/2]).
+                         in/2, thread/2, registered/2, spawn/1, setup_stream/2]).
 
 /* <module> MPD server for BBC radio programmes.
 
@@ -66,8 +67,10 @@ revert(V) :-
 % --- command implementations -----
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
-term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
-term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,none) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A,Eff) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Eff) --> {phrase(A, T)}, B), R).
+mpd_protocol:all_tags(['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
+
 
 command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
@@ -98,8 +101,6 @@ command(playlistid,    [])                 :-> reading_state(queue, reading_queu
 command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queue(plchanges(V))).
 command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, arb) :-> [].
-command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
-command(tagtypes, foldl(a(atom), [Cmd|Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
@@ -112,12 +113,19 @@ command(searchadd,find_args(Filters)) :-> {db_find(false, Filters, Files), add_m
 command(count,    find_args(Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
 
-command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(series, Path, URL)}.
-command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
+command(tagtypes, [], tags(Ts,Ts)) :-> foldl(report(tagtype), Ts).
+command(tagtypes, foldl(a(atom), [Cmd|Args]), tags(T1,T2)) :-> {tagtypes(Cmd, Args, T1, T2)}.
+command(albumart,    (a(path(Path)), a(nat(Offset))), binary(swimpd:reply_url_bin(URL, Offset))) :-> {db_image(series, Path, URL)}.
+command(readpicture, (a(path(Path)), a(nat(Offset))), binary(swimpd:reply_url_bin(URL, Offset))) :-> {db_image(episode, Path, URL)}.
 
 find_args(Filters) --> foldl(tag_value, Filters).
 list_args(album, [artist-Artist], []) --> a("album"), a(atom(Artist)).
 list_args(Tag, Filters, GroupBy) --> a(tag(Tag)), foldl(tag_value, Filters), foldl(group_by, GroupBy).
+
+tagtypes(clear,   [])   --> set([]).
+tagtypes(all,     [])   --> {all_tags(AllTags)}, set(AllTags).
+tagtypes(disable, Tags) --> exclude(in(Tags)).
+tagtypes(enable,  Tags) --> {all_tags(AllTags), include(in(Tags), AllTags, Tags0)}, append(Tags0), sort.
 
 reply_url_bin(URL, Offset) :-
    setup_call_cleanup(
