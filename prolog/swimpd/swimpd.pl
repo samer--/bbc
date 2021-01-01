@@ -66,8 +66,8 @@ revert(V) :-
 % --- command implementations -----
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
-term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
-term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,nothing) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A,Eff) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Eff) --> {phrase(A, T)}, B), R).
 
 command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
@@ -112,8 +112,8 @@ command(searchadd,find_args(Filters)) :-> {db_find(false, Filters, Files), add_m
 command(count,    find_args(Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
 
-command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(series, Path, URL)}.
-command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
+command(albumart,    (a(path(Path)), a(nat(Offset))), just(swimpd:reply_url_bin(URL, Offset))) :-> {db_image(series, Path, URL)}.
+command(readpicture, (a(path(Path)), a(nat(Offset))), just(swimpd:reply_url_bin(URL, Offset))) :-> {db_image(episode, Path, URL)}.
 
 find_args(Filters) --> foldl(tag_value, Filters).
 list_args(album, [artist-Artist], []) --> a("album"), a(atom(Artist)).
