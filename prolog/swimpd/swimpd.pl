@@ -20,28 +20,6 @@
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
                          in/2, thread/2, registered/2, spawn/1, setup_stream/2]).
 
-/* <module> MPD server for BBC radio programmes.
-
-   @todo
-   Core
-      seek, CLP approach?
-      lightweight threads
-      more efficient artist-album-track database view
-
-   Control
-      auto next as well as single (handle stored position correctly too)
-      rewind if playing track where current position is at end
-      Better seekable timeline for radio streams
-      Stop GST player after some time to release audio device
-
-   State management:
-      multiple sessions
-      persistence
-
-   Protocol:
-      clearerror (check error in status?) consume, single, mutliple group
- */
-
 %! mpd_init is det.
 %  Set state of MPD to an empty queue with version 0, volume set to 50%, and start
 %  and db update times to now.
@@ -70,7 +48,6 @@ revert(V) :-
 term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,none) --> {phrase(A, T)}, B), R).
 term_expansion(command(H,A,Eff) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Eff) --> {phrase(A, T)}, B), R).
 mpd_protocol:all_tags(['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
-
 
 command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.

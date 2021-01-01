@@ -1,0 +1,21 @@
+   Core
+      seek, CLP approach?
+      lightweight threads
+
+   Control
+      auto next as well as single (handle stored position correctly too)
+      rewind if playing track where current position is at end
+      Better seekable timeline for radio streams
+      Stop GST player after some time to release audio device
+
+   State management:
+      multiple sessions
+      persistence
+
+   Protocol:
+      clearerror (check error in status?) consume, single, mutliple group
+
+   database
+      subfolders by week
+      Shelf for keeping programmes
+      more efficient artist-album-track database view
