@@ -1,13 +1,6 @@
 :- module(database, [is_programme/1, pid_id/2, id_pid/2, lsinfo//1, addid//2, db_update/1, db_image/3,
                      db_stats/1, db_count//1, db_find//2, db_find/3, db_list//3]).
 
-/* <module> BBC database interface for MPD server
-
-   @todo
-      subfolders by week
-      Shelf for keeping programmes
- */
-
 :- use_module(library(memo)).
 :- use_module(library(dcg_core),  [maybe/3]).
 :- use_module(library(listutils), [enumerate/2]).
