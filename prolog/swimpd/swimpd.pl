@@ -19,6 +19,28 @@
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
                          thread/2, registered/2, spawn/1, setup_stream/2]).
 
+/* <module> MPD server for BBC radio programmes.
+
+   @todo
+   Core
+      seek, CLP approach?
+      lightweight threads
+      more efficient artist-album-track database view
+
+   Control
+      auto next as well as single (handle stored position correctly too)
+      rewind if playing track where current position is at end
+      Better seekable timeline for radio streams
+      Stop GST player after some time to release audio device
+
+   State management:
+      multiple sessions
+      persistence
+
+   Protocol:
+      clearerror (check error in status?) consume, single, mutliple group
+ */
+
 %! mpd_init is det.
 %  Set state of MPD to an empty queue with version 0, volume set to 50%, and start
 %  and db update times to now.
@@ -44,8 +66,8 @@ revert(V) :-
 % --- command implementations -----
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
-term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,nothing) --> {phrase(A, T)}, B), R).
-term_expansion(command(H,A,Eff) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Eff) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
 
 command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
@@ -90,8 +112,8 @@ command(searchadd,find_args(Filters)) :-> {db_find(false, Filters, Files), add_m
 command(count,    find_args(Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
 
-command(albumart,    (a(path(Path)), a(nat(Offset))), just(swimpd:reply_url_bin(URL, Offset))) :-> {db_image(series, Path, URL)}.
-command(readpicture, (a(path(Path)), a(nat(Offset))), just(swimpd:reply_url_bin(URL, Offset))) :-> {db_image(episode, Path, URL)}.
+command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(series, Path, URL)}.
+command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
 
 find_args(Filters) --> foldl(tag_value, Filters).
 list_args(album, [artist-Artist], []) --> a("album"), a(atom(Artist)).
@@ -191,6 +213,7 @@ seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
+eos(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))). % FIXME: do something else at eos?
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({upd_pos(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
 upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
@@ -211,7 +234,7 @@ update_play_state(keep, Pos, I, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(
 update_slave(Dur, P-_, P-0.0/Dur).
 
 gst:id_wants_bookmark(PID) :- is_programme(PID).
-gst:notify_eos :- updating_play_state(stop).
+gst:notify_eos :- updating_play_state(eos).
 
 % -- status --
 report_status((Ver-(Songs-PS))) -->
