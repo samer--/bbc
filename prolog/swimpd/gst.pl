@@ -95,9 +95,16 @@ cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
 save_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
    (  id_wants_bookmark(Id)
-   -> send("position"), recv(position, PPos), maybe(set_state(position(Id)), PPos)
+   -> send("position"), recv(position, PPos), maybe(save_position(Id), PPos)
    ;  true
    ).
+
+adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted is Dur - 10.
+save_position(Id, PPos) :-
+   state(duration, Dur),
+   adjust_position(Dur, PPos, Adjusted),
+   debug(gst, 'Saving position at ~w / ~w', [Adjusted, Dur]),
+   set_state(position(Id), Adjusted).
 
 restore_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
