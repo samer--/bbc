@@ -1,4 +1,4 @@
-:- module(mpd_protocol, [mpd_interactor/0, notify_all/1, reply_binary/4]).
+:- module(mpd_protocol, [mpd_interactor/0, notify_all/1, reply_binary/4, execute_string/1]).
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3]).
@@ -22,6 +22,12 @@ read_command(cmd(Head, Tail)) :-
    read_line_to_codes(current_input, Codes),
    debug(mpd(command), ">> ~s", [Codes]),
    insist(parse_head(Head, Tail, Codes, [])).
+
+execute_string(Cmd) :-
+   string_codes(Cmd, Codes),
+   insist(parse_head(H, T, Codes, [])),
+   execute(0-'', H, T, Reply),
+   reply(Reply).
 
 get_message(M) :- thread_self(Self), thread_get_message(Self, M, [timeout(120)]).
 normal_wait(Pending) :- get_message(M), normal_msg(M, Pending).
