@@ -42,6 +42,7 @@
       clearerror (check error in status?) consume, mutliple group
 
    Extensions:
+      Set up as service under Linux or Mac OS launchd (see how MPD does it)
       Actions on timer: update db, add certain programmes to playlist
       Use tracklist for cool stuff:
       - seek to nth/prev/next track
