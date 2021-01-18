@@ -1,27 +1,33 @@
-:- module(mpd_protocol, [mpd_interactor/0, notify_all/1]).
+:- module(mpd_protocol, [mpd_interactor/0, notify_all/1, reply_binary/4, execute_string/1]).
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3]).
 :- use_module(library(dcg_pair)).
-:- use_module(tools, [in/2, quoted//2, atom//1, report//2, parse_head//2, registered/2, thread/2]).
+:- use_module(tools, [in/2, quoted//2, atom//1, report//1, report//2, parse_head//2, registered/2, thread/2]).
 
-:- multifile command//2.
+:- multifile command//2, command//3.
 
 %! mpd_interactor is det.
 % Run MPD client interaction using the current input and output Prolog streams.
 mpd_interactor :-
-   output("OK MPD 0.20.0"), thread_self(Self),
-   setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill)))]),
-                      catch(transduce(Id), kill, true), cleanup_client(Id)).
+   output("OK MPD 0.21.26"), thread_self(Self),
+   setup_call_cleanup(thread_create(client, Id, [at_exit(thread_signal(Self, throw(kill_transducer)))]),
+                      catch(transduce(Id), kill_transducer, true), cleanup_client(Id)).
 
 client :- registered(client, normal_wait([])).
-cleanup_client(Id) :- catch(thread_send_message(Id, kill), _, true), thread_join(Id, _).
+cleanup_client(Id) :- catch(thread_send_message(Id, kill_client), _, true), thread_join(Id, _).
 transduce(Q)       :- read_command(Cmd), thread_send_message(Q, Cmd), transduce(Q).
 
 read_command(cmd(Head, Tail)) :-
    read_line_to_codes(current_input, Codes),
    debug(mpd(command), ">> ~s", [Codes]),
    insist(parse_head(Head, Tail, Codes, [])).
+
+execute_string(Cmd) :-
+   string_codes(Cmd, Codes),
+   insist(parse_head(H, T, Codes, [])),
+   execute(0-'', H, T, Reply),
+   reply(Reply).
 
 get_message(M) :- thread_self(Self), thread_get_message(Self, M, [timeout(120)]).
 normal_wait(Pending) :- get_message(M), normal_msg(M, Pending).
@@ -77,10 +83,16 @@ output(R) :-
    debug(mpd(command), "<< ~s", [R]),
    write(R), nl, flush_output.
 
+reply_binary(Type, Total, Size, Stream) :-
+   reply_phrase(foldl(report, [size-Total, type-Type, binary-Size])),
+   with_binary_output(current_output, copy_stream_data(Stream, current_output)).
+with_binary_output(S, G) :- setup_call_cleanup(set_stream(S, type(binary)), G, set_stream(S, type(text))).
+
 % -- command execution --
 :- meta_predicate do_and_cont(1,+).
 do_and_cont(G, Pending) :- call(G, Reply), reply(Reply), normal_wait(Pending).
 execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail)), !.
+execute(_, Head, Tail, ok) :- reply_phrase(command(Head, Tail, Binary)), !, call(Binary).
 execute(Ref, Head, _, ack(Ref, err(99, 'Failed on ~s', [Head]))).
 
 % -- notification system ---
