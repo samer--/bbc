@@ -1,17 +1,19 @@
 :- module(swimpd, [mpd_init/0, restore_state/1, save_state/1, save_state/0]).
 
+:- use_module(library(http/http_open)).
 :- use_module(library(dcg_core)).
 :- use_module(library(dcg_pair)).
-:- use_module(library(dcg_codes), [fmt//2]).
+:- use_module(library(dcg_codes), [fmt//2, ctype//1]).
 :- use_module(library(data/pair), [fsnd/3]).
-:- use_module(library(snobol),    [any//1, notany//1, break//1, arb//0]).
+:- use_module(library(snobol),    [any//1, notany//1, break//1, arb//0, arbno//1]).
 :- use_module(library(insist),    [insist/1]).
 :- use_module(library(callutils), [true2/2]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
-:- use_module(protocol, [notify_all/1]).
-:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, update_db/1, db_stats/1]).
+:- use_module(protocol, [notify_all/1, reply_binary/4]).
+:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1,
+                         db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
@@ -23,13 +25,20 @@
    Core
       seek, CLP approach?
       lightweight threads
+      more efficient artist-album-track database view
 
    Control
       auto next as well as single (handle stored position correctly too)
+      rewind if playing track where current position is at end
+      Better seekable timeline for radio streams
+      Stop GST player after some time to release audio device
 
    State management:
       multiple sessions
       persistence
+
+   Protocol:
+      clearerror (check error in status?) consume, single, mutliple group
  */
 
 %! mpd_init is det.
@@ -37,7 +46,7 @@
 %  and db update times to now.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
-   maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 0-([]-nothing)]),
+   maplist(set_state, [start_time, dbtime, volume, queue, consume, single], [Now, Now, 50, 0-([]-nothing), 0, 1]),
    retractall(queue(_,_)), assert(queue(0, [])).
 
 save_state :- get_time(Now), format_time(string(Fn), "state-%FT%T.pl", Now), save_state(Fn).
@@ -45,22 +54,31 @@ save_state(Fn) :- with_output_to_file(Fn, listing(mpd_state:state)).
 
 :- meta_predicate restore_state(2).
 restore_state(State) :-
-   maplist(State, [volume, queue], [Vol, _-(Songs-_)]),
+   maplist(State, [volume, queue, single, consume], [Vol, _-(Songs-_), Single, Consume]),
    forall((member(song(Id, _, _), Songs), call(State, position(Id), PPos)), set_state(position(Id), PPos)),
-   upd_and_notify(volume, (\< set(Vol), \> [mixer])),
+   upd_and_notify(volume, (set(Vol) <\> [mixer])),
+   maplist(upd_and_notify_option, [single-Single, consume-Consume]),
+   % FIXME: I think something is missing from here...
    updating_queue_state(\< \< flip(append, Songs)).
+
+revert(V) :-
+   once(order_by([desc(V)], queue(V, Songs))),
+   updating_queue_state(set_songs(Songs)).
 
 % --- command implementations -----
 :- op(1200, xfx, :->).
 :- discontiguous command/1.
 term_expansion(command(H,A) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T) --> {phrase(A, T)}, B), R).
+term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((mpd_protocol:command(H,T,Bin) --> {phrase(A, T)}, B), R).
 
-command(commands, []) :-> {findall(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
+command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
-command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.
+command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (set(V) <\> [mixer]))}.
+command(single,   a(nat(X)))       :-> {upd_and_notify_option(single-X)}.
+command(consume,  a(nat(X)))       :-> {upd_and_notify_option(consume-X)}.
 command(add,      a(path(Path)))   :-> {add_at(nothing, Path, _)}.
 command(addid,    (a(path(Path)), maybe(a(nat), Pos))) :-> {add_at(Pos, Path, just(Id))}, report('Id'-Id).
-command(clear,    [])                       :-> {updating_queue_state(clear)}.
+% command(clear,    [])                       :-> {updating_queue_state(set_songs([]))}.
 command(delete,   maybe(a(range), R))       :-> {updating_queue_state(delete_range(R, _))}.
 command(deleteid, a(pid(Id)))               :-> {updating_queue_state(delete_id(Id, _))}.
 command(move,     (a(nat(P1)), a(nat(P2)))) :-> {reordering_queue(move(P1, P2))}.
@@ -84,18 +102,38 @@ command(playlistid,    [])                 :-> reading_state(queue, reading_queu
 command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queue(plchanges(V))).
 command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, arb) :-> [].
-command(tagtypes, []) :-> foldl(report(tagtype), ['Album', 'Title', 'Date', 'Comment', 'AvailableUntil']).
+command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
+command(tagtypes, foldl(a(atom), [Cmd|Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
+command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
-command(list,    arb) :-> [].
+command(list,     list_args(Tag, Filters, GroupBy)) :-> db_list(Tag, Filters, GroupBy).
+command(find,     find_args(Filters)) :-> db_find(true, Filters).
+command(search,   find_args(Filters)) :-> db_find(false, Filters).
+command(findadd,  find_args(Filters)) :-> {db_find(true, Filters, Files), add_multi(Files)}.
+command(searchadd,find_args(Filters)) :-> {db_find(false, Filters, Files), add_multi(Files)}.
+command(count,    find_args(Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
+
+command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(series, Path, URL)}.
+command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
+
+find_args(Filters) --> foldl(tag_value, Filters).
+list_args(album, [artist-Artist], []) --> a("album"), a(atom(Artist)).
+list_args(Tag, Filters, GroupBy) --> a(tag(Tag)), foldl(tag_value, Filters), foldl(group_by, GroupBy).
+
+reply_url_bin(URL, Offset) :-
+   setup_call_cleanup(
+      http_open(URL, Stream, [header(content_type, Type), size(Size), range(bytes(Offset, end))]),
+      (Total is Offset + Size, reply_binary(Type, Total, Size, Stream)),
+      close(Stream)).
 
 % -- interaction with state --
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
 upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K, Changes, S1, S2), !.
 
+upd_and_notify_option(K-V) :- upd_and_notify(K, (set(V) <\> [options])).
 updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
 updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), set_queue(V, Songs).
 fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
@@ -103,16 +141,19 @@ fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, 
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 
+report_state(S) --> reading_state(S, report(S)).
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
 reading_queue(Action, _-Q) --> call(Action, Q).
 uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
 
 stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), state(dbtime, D), round(D,DD), db_stats(DBStats).
-update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB).
-update_and_notify(Path) :- update_db(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
+update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
+update_and_notify(Path) :- db_update(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
 
-enact(volume, [], _, _) :- !.
+enact(volume, [], _, _) :- !, debug(mpd(alert), "UNEXPECTED ENACT VOLUME CLAUSE", []).
 enact(volume, [mixer], _, V) :- !, set_volume(V).
+enact(single, _, _, _).
+enact(consume, _, _, _).
 enact(queue, Changes) --> ({member(player, Changes)} -> true2 <\> enact_; true2).
 enact_ --> trans(Ss1, Ss2) <\> enact_player_change(Ss1-Ss2).
 
@@ -133,8 +174,9 @@ currentsong(Songs, ps(Pos, _)) --> {nth0(Pos, Songs, Song)}, report_song_info(Po
 
 report_song_info(Pos-song(PID, _, Tags)) --> {pid_id(PID, Id)}, foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
 
-add_at(nothing, Path, Id) :- updating_queue_state(\< \< add_at_end(addid(Path, Id))).
-add_at(just(Pos), Path, Id) :- reordering_queue(insert_at(Pos, addid(Path, Id))).
+add_multi(Files) :- updating_queue_state(\< \< add_at_end(foldl(addid, Files, _))).
+add_at(nothing, File, Id) :- updating_queue_state(\< \< add_at_end(addid(File, Id))).
+add_at(just(Pos), File, Id) :- reordering_queue(insert_at(Pos, addid(File, Id))).
 add_at_end(P, Songs1, Songs2) :- phrase((list(Songs1), P), Songs2).
 
 copy --> [X] <\> [X].
@@ -142,7 +184,7 @@ insert_at(Pos, P, Songs1, Songs2) :-
    rep(Pos, copy, Songs1-Songs2, Suffix-PrefixT),
    phrase(P, PrefixT, Suffix).
 
-clear --> \< trans(Q, ([]-nothing)), \> player_if_queue_playing(Q).
+set_songs(Songs) --> \< trans(Q, (Songs-nothing)), \> player_if_queue_playing(Q).
 player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
 player_if_playstate_playing(_) --> [player].
 
@@ -179,6 +221,8 @@ seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
+eos(player) --> stop, if(state(single, 0), step(play, next)).
+eos(queue)  --> []. % if(state(consume, 1), FIMXE how to do this?
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({upd_pos(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
 upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
@@ -199,12 +243,12 @@ update_play_state(keep, Pos, I, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(
 update_slave(Dur, P-_, P-0.0/Dur).
 
 gst:id_wants_bookmark(PID) :- is_programme(PID).
-gst:notify_eos :- updating_play_state(stop).
+gst:notify_eos :- updating_play_state(eos(player)), updating_queue_state(eos(queue)).
 
 % -- status --
 report_status((Ver-(Songs-PS))) -->
    {length(Songs, Len)},
-   foldl(report, [repeat-0, random-0, single-0, consume-0, playlist-Ver, playlistlength-Len]),
+   foldl(report, [repeat-0, random-0, playlist-Ver, playlistlength-Len]),
    report_play_state(PS, Songs).
 
 report_play_state(nothing, _) --> report(state-stop).
@@ -237,3 +281,7 @@ maybe_quoted_path(Path) --> {Path=[]}; " ", quoted(path(Path)).
 path(Path) --> seqmap_with_sep("/", path_component, Path).
 path([]) --> [].
 path_component(Dir) --> +(notany(`/`)) // atom(Dir).
+tag(Tag) --> +(ctype(graph)) // atom(Word), {downcase_atom(Word, Tag), Tag \= group}. % FIXME: make definite
+tag_value(Tag-Value) --> a(tag(Tag)), a(atom(Value)). % FIXME: typed tags?
+group_by(G) --> a("group"), a(tag(G)).
+

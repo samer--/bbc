@@ -1,5 +1,5 @@
 :- module(gst, [start_gst_thread/0, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
-% TODO: audio and video sink control. Fix protocol.
+% TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
@@ -94,15 +94,20 @@ cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    restore_position(Songs-Pos),
    (P=play -> send("play"); true).
 
-save_position(_).
-restore_position(_).
-% save_position(Songs-Pos) :-
-%    nth0(Pos, Songs, song(Id, _, _)),
-%    (  id_wants_bookmark(Id)
-%    -> send("position"), recv(position, PPos), maybe(set_state(position(Id)), PPos)
-%    ;  true
-%    ).
+save_position(Songs-Pos) :-
+   nth0(Pos, Songs, song(Id, _, _)),
+   (  id_wants_bookmark(Id)
+   -> send("position"), recv(position, PPos), maybe(save_position(Id), PPos)
+   ;  true
+   ).
 
-% restore_position(Songs-Pos) :-
-%    nth0(Pos, Songs, song(Id, _, _)),
-%    (state(position(Id), PPos) -> send(("seek ", num(PPos))); true).
+adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted is Dur - 10.
+save_position(Id, PPos) :-
+   state(duration, Dur),
+   adjust_position(Dur, PPos, Adjusted),
+   debug(gst, 'Saving position at ~w / ~w', [Adjusted, Dur]),
+   set_state(position(Id), Adjusted).
+
+restore_position(Songs-Pos) :-
+   nth0(Pos, Songs, song(Id, _, _)),
+   (state(position(Id), PPos) -> send(("seek ", num(PPos))); true).
