@@ -11,6 +11,7 @@
 :- use_module(library(data/pair), [fst/2]).
 :- use_module(library(callutils)).
 :- use_module(library(insist)).
+:- use_module(library(memo)).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3, pairf/3]).
 
 :- if(\+clause(http:encoding_filter(gzip, _, _), _)).
@@ -26,10 +27,10 @@ interval_times(ts(S)-ts(E), S, E).
 
 % --- URL and HTTP tools ----
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
-get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
-get_as(xml, URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
-get_as(html, URL, DOM)  :- with_url(URL, In, load_html(In, DOM, [space(preserve), cdata(string)])).
-get_as(pls, URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
+get_as(json, URL, Dict)  :- with_url(URL, In, json_read_dict(In, Dict)).
+get_as(xml,  URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
+get_as(html, URL, DOM)   :- with_url(URL, In, load_html(In, DOM, [space(preserve), cdata(string)])).
+get_as(pls,  URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
 uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
    format(string(URL), Pattern, Args),
@@ -53,12 +54,12 @@ service(p00fzl9p, bbc_world_service,    'BBC World Service Online').
 fetch_new_schedule(S) :-
    get_time(Now),
    catch(fetch_new_schedule_xml(S, Schedule), error(existence_error(_, _), _),
-         fetch_new_schedule_json(2, S, Schedule)),
+         fetch_new_schedule_json(3, S, Schedule)),
    assert(time_service_schedule(Now, S, Schedule)),
    assert(snapshot_time_service(Now, S)).
 
 % -- new JSON schedule from web page
-service_web_sched(Suffix, S, html, 'http://www.bbc.co.uk/schedules/~s~s'-[S, Suffix]) :- service(S).
+service_web_sched(Suffix, S, html, 'https://www.bbc.co.uk/schedules/~s~s'-[S, Suffix]) :- service(S).
 
 fetch_new_schedule_json(WeeksBack, S, ETree) :-
    service(S), get_time(Now),
@@ -198,6 +199,20 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
 mediaset_type(live_only, MS) :- member(MS, ['apple-icy-mp3a', 'http-icy-aac-lc-a']).
+
+% --- programme details and track list --------------------------
+
+player_page(PID, html, 'https://www.bbc.co.uk/sounds/play/~s'-[PID]).
+
+:- volatile_memo pid_tracks(+atom, -any).
+pid_tracks(PID, Tracks) :- insist(uget(player_page(PID), [DOM])), insist(dom_tracks(DOM, Tracks)).
+dom_tracks(DOM, Tracks) :-
+   xpath(DOM, body/div(@id='orb-modules')//script(content), [JSExpr]),
+   once(sub_string(JSExpr, I, 1, _, "{")),
+   sub_string(JSExpr, I, _, 2, JSONExpr),
+   atom_json_dict(JSONExpr, JSONData, []),
+   Tracks = JSONData.get(tracklist).get(tracks).
+
 
 % --- term display -----
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
