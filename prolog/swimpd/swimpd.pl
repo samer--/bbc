@@ -46,7 +46,7 @@
 %  and db update times to now.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
-   maplist(set_state, [start_time, dbtime, volume, queue], [Now, Now, 50, 0-([]-nothing)]),
+   maplist(set_state, [start_time, dbtime, volume, queue, consume, single], [Now, Now, 50, 0-([]-nothing), 0, 1]),
    retractall(queue(_,_)), assert(queue(0, [])).
 
 save_state :- get_time(Now), format_time(string(Fn), "state-%FT%T.pl", Now), save_state(Fn).
@@ -54,9 +54,11 @@ save_state(Fn) :- with_output_to_file(Fn, listing(mpd_state:state)).
 
 :- meta_predicate restore_state(2).
 restore_state(State) :-
-   maplist(State, [volume, queue], [Vol, _-(Songs-_)]),
+   maplist(State, [volume, queue, single, consume], [Vol, _-(Songs-_), Single, Consume]),
    forall((member(song(Id, _, _), Songs), call(State, position(Id), PPos)), set_state(position(Id), PPos)),
-   upd_and_notify(volume, (\< set(Vol), \> [mixer])),
+   upd_and_notify(volume, (set(Vol) <\> [mixer])),
+   maplist(upd_and_notify_option, [single-Single, consume-Consume]),
+   % FIXME: I think something is missing from here...
    updating_queue_state(\< \< flip(append, Songs)).
 
 revert(V) :-
@@ -71,7 +73,9 @@ term_expansion(command(H,A,Bin) :-> B, [R, command(H)]) :- dcg_translate_rule((m
 
 command(commands, []) :-> {setof(C, command(C), Commands)}, foldl(report(command), [close, idle|Commands]).
 command(save,     a(path([Name]))) :-> {save_state(Name)}.
-command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (\< set(V), \> [mixer]))}.
+command(setvol,   a(num(V)))       :-> {upd_and_notify(volume, (set(V) <\> [mixer]))}.
+command(single,   a(nat(X)))       :-> {upd_and_notify_option(single-X)}.
+command(consume,  a(nat(X)))       :-> {upd_and_notify_option(consume-X)}.
 command(add,      a(path(Path)))   :-> {add_at(nothing, Path, _)}.
 command(addid,    (a(path(Path)), maybe(a(nat), Pos))) :-> {add_at(Pos, Path, just(Id))}, report('Id'-Id).
 % command(clear,    [])                       :-> {updating_queue_state(set_songs([]))}.
@@ -101,7 +105,7 @@ command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
 command(tagtypes, foldl(a(atom), [Cmd|Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status,   []) :-> reading_state(volume, report(volume)), reading_state(queue, report_status).
+command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
 command(list,     list_args(Tag, Filters, GroupBy)) :-> db_list(Tag, Filters, GroupBy).
@@ -129,6 +133,7 @@ reply_url_bin(URL, Offset) :-
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
 upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K, Changes, S1, S2), !.
 
+upd_and_notify_option(K-V) :- upd_and_notify(K, (set(V) <\> [options])).
 updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
 updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), set_queue(V, Songs).
 fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
@@ -136,6 +141,7 @@ fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, 
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 
+report_state(S) --> reading_state(S, report(S)).
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
 reading_queue(Action, _-Q) --> call(Action, Q).
 uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
@@ -144,8 +150,10 @@ stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), state(dbtime, D), round(D,
 update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
 update_and_notify(Path) :- db_update(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
 
-enact(volume, [], _, _) :- !.
+enact(volume, [], _, _) :- !, debug(mpd(alert), "UNEXPECTED ENACT VOLUME CLAUSE", []).
 enact(volume, [mixer], _, V) :- !, set_volume(V).
+enact(single, _, _, _).
+enact(consume, _, _, _).
 enact(queue, Changes) --> ({member(player, Changes)} -> true2 <\> enact_; true2).
 enact_ --> trans(Ss1, Ss2) <\> enact_player_change(Ss1-Ss2).
 
@@ -213,7 +221,8 @@ seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
-eos(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))). % FIXME: do something else at eos?
+eos(player) --> stop, if(state(single, 0), step(play, next)).
+eos(queue)  --> []. % if(state(consume, 1), FIMXE how to do this?
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({upd_pos(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
 upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
@@ -234,12 +243,12 @@ update_play_state(keep, Pos, I, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(
 update_slave(Dur, P-_, P-0.0/Dur).
 
 gst:id_wants_bookmark(PID) :- is_programme(PID).
-gst:notify_eos :- updating_play_state(eos).
+gst:notify_eos :- updating_play_state(eos(player)), updating_queue_state(eos(queue)).
 
 % -- status --
 report_status((Ver-(Songs-PS))) -->
    {length(Songs, Len)},
-   foldl(report, [repeat-0, random-0, single-0, consume-0, playlist-Ver, playlistlength-Len]),
+   foldl(report, [repeat-0, random-0, playlist-Ver, playlistlength-Len]),
    report_play_state(PS, Songs).
 
 report_play_state(nothing, _) --> report(state-stop).
