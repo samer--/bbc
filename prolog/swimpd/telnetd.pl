@@ -26,7 +26,7 @@ server_loop(P, Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),
    debug(mpd(connection), "new connection from ~w", [Peer]),
    tcp_open_socket(Slave, IO),
-   thread_create(call_cleanup(client(P, IO, Peer, Allow), close_peer(Peer, IO)), _, [detached(true)]),
+   thread_create(client(P, IO, Peer, Allow), _, [at_exit(close_peer(Peer, IO)), detached(true)]),
    server_loop(P, Socket, Allow).
 
 close_peer(Peer, IO) :- debug(mpd(connection), 'Closing connection from ~w', [Peer]), close(IO).

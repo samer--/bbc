@@ -4,14 +4,21 @@
 
 :- use_module(library(sgml)).
 :- use_module(library(xpath)).
-:- use_module(library(zlib)). % enable gzip encoded HTTP data
+:- use_module(library(zlib), [zopen/3]). % enable gzip encoded HTTP data
 :- use_module(library(http/http_open)).
 :- use_module(library(http/json)).
 :- use_module(library(http/http_sgml_plugin)).
 :- use_module(library(data/pair), [fst/2]).
 :- use_module(library(callutils)).
 :- use_module(library(insist)).
+:- use_module(library(memo)).
 :- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3, pairf/3]).
+
+:- if(\+clause(http:encoding_filter(gzip, _, _), _)).
+% older versions of SWI don't have this clause
+:- multifile http:encoding_filter/3.
+http:encoding_filter(gzip, In0, In) :- zopen(In0, In, [ close_parent(true) ]).
+:- endif.
 
 % see https://docs.google.com/document/pub?id=111sRKv1WO78E9Mf2Km91JNCzfbmfU0QApsZyvnRYFmU
 :- dynamic snapshot_time_service/2, time_service_schedule/3.
@@ -20,13 +27,14 @@ interval_times(ts(S)-ts(E), S, E).
 
 % --- URL and HTTP tools ----
 with_url(URL, Stream, Goal) :- setup_call_cleanup(http_open(URL, Stream, []), Goal, close(Stream)).
-get_as(json, URL, Dict) :- with_url(URL, In, json_read_dict(In, Dict)).
-get_as(xml, URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
-get_as(html, URL, DOM)  :- with_url(URL, In, load_html(In, DOM, [space(preserve), cdata(string)])).
-get_as(pls, URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
+get_as(json, URL, Dict)  :- with_url(URL, In, json_read_dict(In, Dict)).
+get_as(xml,  URL, DOM)   :- with_url(URL, In, load_xml(In, DOM, [space(remove)])).
+get_as(html, URL, DOM)   :- with_url(URL, In, load_html(In, DOM, [space(preserve), cdata(string)])).
+get_as(pls,  URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, [])).
 uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
    format(string(URL), Pattern, Args),
+   debug(bbc, "Getting as ~w: ~w", [Fmt, URL]),
    get_as(Fmt, URL, Result).
 
 % --- service database
@@ -46,24 +54,29 @@ service(p00fzl9p, bbc_world_service,    'BBC World Service Online').
 fetch_new_schedule(S) :-
    get_time(Now),
    catch(fetch_new_schedule_xml(S, Schedule), error(existence_error(_, _), _),
-         fetch_new_schedule_json(S, Schedule)),
+         fetch_new_schedule_json(3, S, Schedule)),
    assert(time_service_schedule(Now, S, Schedule)),
    assert(snapshot_time_service(Now, S)).
 
 % -- new JSON schedule from web page
-service_web_sched(Suffix, S, html, 'http://www.bbc.co.uk/schedules/~s~s'-[S, Suffix]) :- service(S).
+service_web_sched(Suffix, S, html, 'https://www.bbc.co.uk/schedules/~s~s'-[S, Suffix]) :- service(S).
 
-fetch_new_schedule_json(S, ETree) :-
-   service(S), get_time(Now), LastWeek is Now - 7*24*3600,
-   findall(E, (member(T, [Now, LastWeek]), service_time_entry(S, T, E)), Es),
+fetch_new_schedule_json(WeeksBack, S, ETree) :-
+   service(S), get_time(Now),
+   findall(E, (between(0, WeeksBack, W), call(graph_entry * service_time_graph(S) * weeks_back(Now), W, E)), Es),
    call(ord_list_to_assoc * sort(1, @<) * maplist(pairf(entry_pid)), Es, ETree).
 
-service_time_entry(S, Time, entry(Props)) :-
+weeks_back(Now, W, T) :- T is Now - W*7*24*3600.
+graph_entry(Graph, entry(Props)) :- member(E, Graph), findall(Prop, jprop(E, Prop), Props).
+service_time_graph(S, Time, Graph) :-
    format_time(atom(YW1), '/%G/w%V', Time),
-   uget(service_web_sched(YW1, S), [DOM]),
+   insist(uget(service_web_sched(YW1, S), [DOM])),
+   insist(dom_graph(DOM, Graph)).
+
+
+dom_graph(DOM, Graph) :-
    xpath(DOM, body/div(@id='orb-modules')//script(@type='application/ld+json',content), [X]),
-   atom_json_dict(X, T, []), get_dict('@graph', T, Graph), member(E, Graph),
-   findall(Prop, jprop(E, Prop), Props).
+   atom_json_dict(X, T, []), get_dict('@graph', T, Graph).
 
 jprop(E, pid(X))      :- string_to_atom(E.identifier, X).
 jprop(E, service(X))  :- string_to_atom(E.publication.publishedOn.name, X).
@@ -186,6 +199,20 @@ u_mediaset(Fmt, MediaSet, VPID, Fmt, URLForm-[MediaSet, Fmt, VPID]) :-
 mediaset_format(F) :- member(F, [json, xml, pls]).
 mediaset_type(aod, MS) :- member(MS, ['pc', 'audio-syndication', 'audio-syndication-dash', 'apple-ipad-hls', 'iptv-all']).
 mediaset_type(live_only, MS) :- member(MS, ['apple-icy-mp3a', 'http-icy-aac-lc-a']).
+
+% --- programme details and track list --------------------------
+
+player_page(PID, html, 'https://www.bbc.co.uk/sounds/play/~s'-[PID]).
+
+:- volatile_memo pid_tracks(+atom, -any).
+pid_tracks(PID, Tracks) :- insist(uget(player_page(PID), [DOM])), insist(dom_tracks(DOM, Tracks)).
+dom_tracks(DOM, Tracks) :-
+   xpath(DOM, body/div(@id='orb-modules')//script(content), [JSExpr]),
+   once(sub_string(JSExpr, I, 1, _, "{")),
+   sub_string(JSExpr, I, _, 2, JSONExpr),
+   atom_json_dict(JSONExpr, JSONData, []),
+   Tracks = JSONData.get(tracklist).get(tracks).
+
 
 % --- term display -----
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
