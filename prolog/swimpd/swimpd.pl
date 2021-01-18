@@ -26,6 +26,7 @@
       seek, CLP approach?
       lightweight threads
       more efficient artist-album-track database view
+      review process synch and comms, see eg Erlang approach
 
    Control
       auto next as well as single (handle stored position correctly too)
@@ -38,7 +39,13 @@
       persistence
 
    Protocol:
-      clearerror (check error in status?) consume, single, mutliple group
+      clearerror (check error in status?) consume, mutliple group
+
+   Extensions:
+      Actions on timer: update db, add certain programmes to playlist
+      Use tracklist for cool stuff:
+      - seek to nth/prev/next track
+      - query current track info
  */
 
 %! mpd_init is det.
