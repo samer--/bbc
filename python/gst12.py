@@ -12,6 +12,7 @@ Gst.init(None)
 # --- pytools digest, for self containment ---
 delay = bind(bind, bind)
 def def_consult(default, d):    return lambda k: d.get(k, default)
+def identity(x):    return x
 def compose2(f, g): return lambda x: f(g(x))
 def compose(*args): return reduce(compose2, args)
 def const(x):       return lambda _: x
@@ -23,6 +24,16 @@ def mul(y):         return lambda x: x * y
 def divby(y):       return lambda x: float(x) / y
 def maybe(f):       return lambda x: None if x is None else f(x)
 def guard(p):       return lambda x: x if p(x) else None
+_normal = '\033[0m'
+def print_stderr(m): sys.stderr.write(''.join([col(0,'yellow'), m, _normal, '\n'])); sys.stderr.flush()
+def swap((x,y)): return y, x
+def col(brightness, name): return '\033[%dm' % ([30, 90][brightness] + _colours[name])
+_colours = dict(map(swap, enumerate(['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'])))
+@delay
+def tracef(info, f, arg):
+    print_stderr("==> ENTER %s: %r" % (info, arg));          y=f(arg)
+    print_stderr("==>  EXIT %s: %r -> %r" % (info, arg, y)); return y
+
 neq = delay(op.ne)
 pos = bind(op.lt, 0)
 
@@ -58,6 +69,7 @@ def main():
     p = Gst.ElementFactory.make("playbin", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
     durations = changes([0.0])
+    wrapper = [identity] # MUTABLE list
 
     events = def_consult(const(None),
                    { MT.EOS:          compose(print_, const('eos'))
@@ -79,6 +91,7 @@ def main():
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
                   , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync(), maybe_fmt_cap(get_cap(p)))
+                  , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
                   })
     def handle_messages(bus):
         while True: handle_msg(bus.timed_pop(Gst.CLOCK_TIME_NONE))
@@ -86,6 +99,6 @@ def main():
     t = threading.Thread(target=handle_messages, args=[p.get_bus()])
     t.daemon = True; t.start()
     with Context(lambda: (stop, None)):
-        while True: player(decons(guard(neq(''))(sys.stdin.readline().rstrip()).split(' ', 1)))
+        while True: wrapper[0](player)(decons(guard(neq(''))(sys.stdin.readline().rstrip()).split(' ', 1)))
 
 if __name__ == '__main__': main()
