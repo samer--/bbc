@@ -12,8 +12,8 @@
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
 :- use_module(protocol, [notify_all/1, reply_binary/4]).
-:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, lsinfo//1, addid//2, db_update/1, db_count//1,
-                         db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
+:- use_module(database, [is_programme/1, id_pid/2, pid_id/2, pid_tracks/2, lsinfo//1, addid//2, db_update/1,
+                         db_count//1, db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
@@ -97,8 +97,8 @@ command(shuffle,  maybe(a(range), R))       :-> {reordering_queue(shuffle(R))}.
 command(playid,   a(pid(Id)))                  :-> {updating_play_state(play(_, Id))}.
 command(play,     maybe(a(nat), N))            :-> {updating_play_state(play(N))}.
 command(stop,     [])                          :-> {updating_play_state(stop)}.
-command(previous, [])                          :-> {updating_play_state(step(play, prev))}.
-command(next,     [])                          :-> {updating_play_state(step(play, next))}.
+command(previous, [])                          :-> {updating_play_state(step_track_or_prog(prev))}.
+command(next,     [])                          :-> {updating_play_state(step_track_or_prog(next))}.
 command(pause,    maybe(a(nat), X))            :-> {updating_play_state(fsnd(fjust(pause(X))))}.
 command(seek,     (a(nat(Pos)), a(num(PPos)))) :-> {updating_play_state(seek_pos_id(Pos, _, PPos))}.
 command(seekid,   (a(pid(Id)), a(num(PPos))))  :-> {updating_play_state(seek_pos_id(_, Id, PPos))}.
@@ -235,6 +235,34 @@ stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({upd_pos(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
 upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
 upd_pos(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
+
+% -- next and previous handling --
+step_track_or_prog(Dir) -->
+   (  current(_, PID), {is_programme(PID), pid_tracks(PID, Tracks)}
+   -> {gst_audio_info(_, au(_Dur, Elap, _, _)),
+       cursor_at_time(Elap, [], Tracks, cursor(Fore, _, Aft)),
+       track_in_direction(Dir, Fore, Aft, Target)
+      },
+      seekcur(abs(Target.offset.start))
+   ;  step(play, Dir)
+   ).
+
+cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
+   compare(R1, Time, Track.offset.start),
+   compare(R2, Time, Track.offset.end),
+   ( build_cursor(R1, R2, Fore, Track, Aft, Cursor) -> true
+   ; cursor_at_time(Time, [Track | Fore], Aft, Cursor)
+   ).
+
+track_in_direction(prev, [T|_], _, T).
+track_in_direction(next, _, [T|_], T).
+
+build_cursor(<, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % T ...  (start, end)
+build_cursor(=, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % (T=start,   end)
+build_cursor(=, =, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (T=start=end)
+build_cursor(>, <, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (start, T, end)
+build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], nothing, Aft)). % (start,  T=end)
+% ------------------------------
 
 play(nothing) --> get(_-just(ps(Pos, _))), !, play(Pos, _).
 play(nothing) --> play(0, _).
