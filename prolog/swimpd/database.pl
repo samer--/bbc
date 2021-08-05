@@ -45,7 +45,7 @@ add(Dir, E) --> {entry_tags(Dir, E, PID, Tags, [])}, [song(PID, database:entry_u
 entry_url(E, URL) :- entry_xurl(_, E, _-URL).
 
 add_pid(PID) --> [song(PID, database:version_url(V), [file-PID|Tags])], {pid_version(PID, V), version_tags(V, Tags)}.
-version_tags(V, [duration-D, 'Title'-T, 'Comment'-S]) :- maplist(version_prop(V), [duration(D), title(T), summary(S)]).
+version_tags(V, [duration-D, 'Title'-T, 'Comment'-S1]) :- maplist(version_prop(V), [duration(D), title(T), summary(S)]), to_one_line(S, S1).
 version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-URL).
 
 % --- query db contents ---
@@ -163,8 +163,9 @@ live_service_tags(_-SLN, [file-File, 'Title'-SLN]) :- path_file(['Live Radio', S
 
 entry_date(E, Date) :- entry_prop(E, broadcast(Date)).
 entry_tags(Dir, E, PID) -->
-   {maplist(entry_prop(E), [pid(PID), synopsis(Syn), duration(Dur)]), path_file([Dir, PID], File)},
-	[file-File, 'Comment'-Syn, duration-Dur],
+   { maplist(entry_prop(E), [pid(PID), synopsis(Syn), duration(Dur)]),
+     path_file([Dir, PID], File), to_one_line(Syn, Syn1) },
+	[file-File, 'Comment'-Syn1, duration-Dur],
    tag(title_and_maybe_album(Dir, PID), E),
    foldl(maybe, [tag(service, E), tag(broadcast, E), tag(availability, E)]).
 
@@ -187,3 +188,4 @@ cut_parent(_-Name) --> maybe((str_cut(Name), str_cut(": "))).
 str_cut(Pre, String, Suff) :- string_concat(Pre, Suff, String).
 ts_string(T, S) :- format_time(string(S), '%c', T).
 path_file(Path, File) :- atomic_list_concat(Path, '/', File).
+to_one_line(X, Y) :- split_string(X, "\r\n", "\r\n ", Ys), atomics_to_string(Ys, "; ", Y).
