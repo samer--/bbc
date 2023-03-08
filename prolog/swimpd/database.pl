@@ -1,3 +1,9 @@
+%% Tyoes used in this module:
+%  pid   ~ a BBC programme identifier (for a programme or a service)
+%  id    ~ a local numeric identifier, valid only during one running instance of SWIPD
+%  mpd_filter         ~ a spec for finding items in the database.
+%  path == list(atom) ~ a path to an item or directory in the database.
+
 :- module(database, [is_programme/1, pid_id/2, pid_tracks/2, id_pid/2, lsinfo//1, addid//2, db_update/1,
                      db_image/3, db_stats/1, db_count//1, db_find//2, db_find/3, db_list//3]).
 
@@ -14,13 +20,17 @@
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
 id_pid(Id,PID) :- once(browse(pid_id(PID, Id))).
-is_programme(PID) :- \+service(PID).
+is_programme(PID) :- \+service(PID). % it's a programme if it's not a radio station
+set_with(K, P) :- call(P, _, V), set_state(K, V).
 
-% --- update and stats ---
+%% db_update(+Path:path) is det.
+%  Update database below given path (empty for root, or a service name), by fetches from BBC.
 db_update([]) :- forall(service(S), fetch_new_schedule(S)), set_with(db_stats, db_stats).
 db_update([ServiceName]) :- service(S, ServiceName), fetch_new_schedule(S), set_with(db_stats, db_stats).
+
+%% db_stats(-Stats:list(pair(atom, number)) is det.
+%  Retrieve database stats from state/2, generating them and adding them to state/2 if necessary.
 db_stats(Stats) :- state(db_stats, Stats) -> true; set_with(db_stats, db_stats), db_stats(Stats). % FIXME
-set_with(K, P) :- call(P, _, V), set_state(K, V).
 
 db_stats(_, [artists-NumServices, albums-M, songs-N, db_playtime-Dur]) :-
    findall(B-D, brand_dur(B, D), Items), length(Items, N),
@@ -29,15 +39,17 @@ db_stats(_, [artists-NumServices, albums-M, songs-N, db_playtime-Dur]) :-
    aggregate_all(sum(D), member(_-D, Items), DurFloat), round(DurFloat, Dur).
 brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
 
-% --- adding to playlist by path  ---
+%% addid(+Path:path, -Id:maybe(id))// is det.
+%  Add to playlist by path. Adding a single item (as opposed to a whole directory), returns the id
+%  of the added item in the second argument as just(Id).
 addid([Dir], nothing) --> {directory(Dir, Entries)}, foldl(add(Dir), Entries).
 addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Services).
 
 addid(['PID', PID], just(Id)) --> {pid_id(PID, Id)}, add_pid(PID).
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
-addid(['In Progress', PID], just(Id)) --> {pid_entry(any, PID, E), pid_id(PID, Id)}, add('In Progress', E).
+addid(['In Progress', PID], just(Id)) --> {once(pid_entry(_, PID, E)), pid_id(PID, Id)}, add('In Progress', E).
 addid([ServiceName, PID], just(Id)) -->
-   {service(S, ServiceName), ensure_service_schedule(S),  pid_entry(latest(S), PID, E), pid_id(PID, Id)},
+   {service(S, ServiceName), ensure_service_schedule(S),  pid_entry(S, PID, E), pid_id(PID, Id)},
    add(ServiceName, E).
 
 add_live(S-SLN) --> {live_service_tags(S-SLN, Tags), live_url(S, URL)}, [song(S, =(URL), Tags)].
@@ -49,6 +61,11 @@ version_tags(V, [duration-D, 'Title'-T, 'Comment'-S1]) :- maplist(version_prop(V
 version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-URL).
 
 % --- query db contents ---
+
+%% lsinfo(+Path:path)// is det.
+%  Generates codes for directory listing of named entities. If Paths is empty, then outputs root directory entries,
+%  ie for 'In Progress', 'Live Radio', and all services (radio stations). Otherwise, Things must contain a single
+%  directory name selected from one of the root entries.
 lsinfo([]) -->
    foldl(report(directory), ['In Progress', 'Live Radio']),
    {findall(S-SLN, service(S, SLN), Services)}, foldl(service_dir, Services).
@@ -56,7 +73,7 @@ lsinfo(['Live Radio']) --> {live_services(Services)}, foldl(live_radio, Services
 lsinfo([Dir]) --> {directory(Dir, Items)}, foldl(programme(Dir), Items).
 
 directory('In Progress', Items) :-
-   findall(E, (state(position(PID), _), once(pid_entry(any, PID, E))), Items).
+   findall(E, (state(position(PID), _), once(pid_entry(_, PID, E))), Items).
 directory(ServiceName, SortedItems) :-
 	service(S, ServiceName),
    ensure_service_schedule(S),
@@ -79,8 +96,15 @@ programme(Dir, E) -->
 service_tag(artist, 'Artist').
 service_tag(albumartist, 'AlbumArtist').
 
+%% db_find(_, +Filters:list(mpd_filter), -Paths:list(path)) is det.
+%% db_find(_, +Filters:list(mpd_filter))// is det.
+%  Find and return or report as codes list of items matching given filters.
 db_find(_, Filters, Paths) :- find(Filters, Tracks), maplist(track_path, Tracks, Paths).
 db_find(_, Filters) --> {find(Filters, Tracks)}, foldl(found_track, Tracks).
+
+%% db_count(+Filters:list(mpd_filter))// is det.
+%  Counts items in database matching given MPD filters, which must match one of several
+%  specific forms. See find/2 for details.
 db_count(Filters) -->
    { find(Filters, Tracks),
      length(Tracks, NumTracks),
@@ -114,6 +138,7 @@ find(Filters, Tracks) :-
    findall(E, service_entry(S, E), Es),
    entries_tracks(Es, Tracks).
 
+%% db_list(+T:tag, +Filters:list(mpd_filter), +GroupBy:list(grouping_tag))// is det.
 db_list(genre, [], _) --> [].
 db_list(album, [], [GroupBy]) -->
    { service_tag(GroupBy, ServiceTag), !,
@@ -147,7 +172,8 @@ artist_albums(Ar, Als) :- service(S, Ar), setof(B, service_brand(S, B), Als).
 report_service_name_brands(ServiceTag, SN-Brands) --> foldl(report_album_with(ServiceTag-SN), Brands).
 report_album_with(TagVal, Album) --> report('Album'-Album), report(TagVal).
 
-db_image(Kind, [Dir, PID], URL) :- service(S, Dir), pid_entry(latest(S), PID, E), entry_image(Kind, E, URL).
+%% db_image(+Kind:oneof([series, episode]), +Path:path, -URL:atom) is det.
+db_image(Kind, [Dir, PID], URL) :- service(S, Dir), pid_entry(S, PID, E), entry_image(Kind, E, URL).
 entry_image(episode, E, URL) :- entry_prop(E, image(URL)).
 entry_image(series, E, URL) :- entry_prop(E, parent(_, _, _, Props)), member(image(URL), Props).
 
