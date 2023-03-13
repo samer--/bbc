@@ -5,7 +5,7 @@
 :- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
 :- use_module(library(dcg_codes), [fmt//2]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
-:- use_module(state, [state/2, set_state/2]).
+:- use_module(state, [state/2, set_state/2, rm_state/1]).
 :- use_module(protocol, [notify_all/1]).
 :- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, maybe/2, registered/2, setup_stream/2, thread/2]).
 
@@ -35,7 +35,6 @@ gst_handle(Codes, Self, Out) :-
    ;  true
    ),
    gst_read_next(Self, Out).
-set_global(K-V) :- set_state(K, V). %, notify_all([player]). % Upsets MPD Droid
 
 gst_message(eos, [], []) --> {notify_eos}.
 gst_message(position, [position-X], []) --> " ", num(X).
@@ -45,6 +44,7 @@ gst_message(format, [], [format-just(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
+set_global(K-V) :- set_state(K, V). %, notify_all([player]). % Upsets MPD Droid
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 
@@ -83,17 +83,19 @@ enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
    ).
 
 enact_slave_change(_,          nothing, nothing) :- !.
-enact_slave_change(SongsPos-_, just(_), nothing) :- !, save_position(SongsPos), send("stop").
+enact_slave_change(SongsPos-_, just(S), nothing) :- !, stop_if_playing(SongPos, S).
 enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, cue_and_maybe_play(SongsPos, S-Au).
 enact_slave_change(_,          just(S1-_), just(S2-_)) :-
    (  S1-S2 = play-pause -> send("pause")
    ;  S1-S2 = pause-play -> send("play")
    ;  true
    ).
-stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("stop").
+stop_if_playing(SongsPos, _) :-
+   save_position(SongsPos), send("stop"),
+   maplist(rm_state, [bitrate, format, duration]).
 cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    nth0(Pos, Songs, song(_, GetURL, _)), call(GetURL, URL),
-   maplist(set_state, [bitrate, format, duration], [nothing, nothing, Dur]),
+   maplist(set_global, [bitrate-nothing, format-nothing, duration-Dur]),
    send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
    (P=play -> send("play"); true).
