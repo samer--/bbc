@@ -1,4 +1,4 @@
-:- module(gst, [start_gst_thread/0, gst_audio_info/2, gst/2, enact_player_change/3, set_volume/1]).
+:- module(gst, [start_gst_thread/0, gst_audio_info/2, enact_player_change/3, set_volume/1]).
 % TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
@@ -7,7 +7,7 @@
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_state/2]).
 :- use_module(protocol, [notify_all/1]).
-:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, maybe/2, setup_stream/2]).
+:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
@@ -19,11 +19,9 @@ gst_peer :-
 start_gst(PID,In-Out) :-
    process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]).
 
-:- dynamic gst/2.
 gst_reader_thread(_-(In-Out)) :-
-   thread_self(Self),
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
-   setup_call_cleanup(assert(gst(Self,In)), gst_reader(Self, Out), retract(gst(Self,In))).
+   registered(gst(In), gst_reader(Out)).
 
 gst_reader(Self, Out) :- state(volume, V), set_volume(V), gst_read_next(Self, Out).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
@@ -49,9 +47,17 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
-send(P) :- gst(_,In), phrase(P, Codes), debug(gst, '<~~ ~s', [Codes]), format(In, "~s\n", [Codes]).
-recv(K, MV) :- gst(Id, _), ( thread_get_message(Id, K-V, [timeout(15)]) -> MV = just(V)
-                           ; print_message(warning, recv_timeout(K)), MV = nothing).
+
+send(P) :-
+   thread(gst(In), _), phrase(P, Codes),
+   debug(gst, '<~~ ~s', [Codes]),
+   format(In, "~s\n", [Codes]).
+
+recv(K, MV) :-
+   thread(gst(_), Id),
+   ( thread_get_message(Id, K-V, [timeout(15)]) -> MV = just(V)
+   ; print_message(warning, recv_timeout(K)), MV = nothing
+   ).
 
 start_gst_thread :- thread_create(forever(gst_peer), _, [alias(gst_slave), detached(true)]).
 
