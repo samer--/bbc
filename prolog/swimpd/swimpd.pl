@@ -111,7 +111,7 @@ command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queu
 command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
-command(tagtypes, foldl(a(atom), [Cmd|Args])) :-> [].
+command(tagtypes, foldl(a(atom), [_Cmd|_Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
