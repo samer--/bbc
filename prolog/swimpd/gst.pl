@@ -36,11 +36,14 @@ gst_handle(Codes, Self, Out) :-
    ),
    gst_read_next(Self, Out).
 
-gst_message(eos, [], []) --> {notify_eos}.
+%           +cmd head -msgs out     -globals to set
+gst_message(eos,      [],           []) --> {notify_eos}.
 gst_message(position, [position-X], []) --> " ", num(X).
-gst_message(bitrate, [], [bitrate-just(BR)]) --> " ", num(BR).
-gst_message(duration, [], [duration-D]) --> " ", num(D).
-gst_message(format, [], [format-just(Rate:Fmt:Ch)]) --> " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+gst_message(bitrate,  [],           [bitrate-just(BR)]) --> " ", num(BR).
+gst_message(duration, [],           [duration-D]) --> " ", num(D).
+gst_message(format,   [],           [format-just(Rate:Fmt:Ch)]) -->
+   " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
+
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
