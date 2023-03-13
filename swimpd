@@ -20,6 +20,6 @@ local(ip(192,168,1,_)).
 start_mpd(Port, Options) :- thread_create(telnet_server(mpd_interactor, Port, Options), _, [detached(true), alias(mpd_server)]).
 
 start([A1]) :- atom_number(A1, Port), start_mpd(Port, [allow(local)]), start_gst_thread.
-main :- current_prolog_flag(argv, Argv), mpd_init, start(Argv), confirm_on_halt, at_halt(save_state).
+main :- current_prolog_flag(argv, Argv), mpd_init, start(Argv), confirm_on_halt. 
 :- (flag(swimpd_load_count, 0, 1) -> main; true).
 % vim: ft=prolog

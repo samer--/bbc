@@ -10,7 +10,7 @@
 :- use_module(library(callutils), [true2/2]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
-:- use_module(state,    [set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
+:- use_module(state,    [init_state/2, set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
 :- use_module(protocol, [notify_all/1, reply_binary/4]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, pid_tracks/2, lsinfo//1, addid//2, db_update/1,
                          db_count//1, db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
@@ -54,7 +54,7 @@
 %  and db update times to now.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
-   maplist(set_state, [start_time, dbtime, volume, queue, consume, single], [Now, Now, 50, 0-([]-nothing), 0, 1]),
+   maplist(init_state, [start_time, dbtime, volume, queue, consume, single], [Now, Now, 50, 0-([]-nothing), 0, 1]),
    retractall(queue(_,_)), assert(queue(0, [])).
 
 save_state :- get_time(Now), format_time(string(Fn), "state-%FT%T.pl", Now), save_state(Fn).

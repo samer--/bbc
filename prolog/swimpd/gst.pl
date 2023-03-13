@@ -2,12 +2,13 @@
 % TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
-:- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
+:- use_module(library(dcg_core), [seqmap_with_sep//3, set/3, (//)//2]).
 :- use_module(library(dcg_codes), [fmt//2]).
+:- use_module(library(data/pair), [ffst/3]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_state/2, rm_state/1]).
 :- use_module(protocol, [notify_all/1]).
-:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, maybe/2, registered/2, setup_stream/2, thread/2]).
+:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
@@ -23,7 +24,15 @@ gst_reader_thread(_-(In-Out)) :-
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
    registered(gst(In), gst_reader(Out)).
 
-gst_reader(Self, Out) :- state(volume, V), set_volume(V), gst_read_next(Self, Out).
+gst_reader(Out) :-
+   state(volume, V), set_volume(V),
+   state(queue, _-(Songs-Player)),
+   fmaybe(pause_player, Player, PausedPlayer),
+   debug(gst, "Restoring player as ~w", [PausedPlayer]),
+   enact_player_change([]-Songs, nothing, PausedPlayer),
+   thread_self(Self), gst_read_next(Self, Out).
+
+pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
 gst_handle(end_of_file, _, _) :- !, debug(gst, 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
