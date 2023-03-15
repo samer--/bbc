@@ -1,4 +1,4 @@
-:- module(swimpd, [mpd_init/0, restore_state/1, save_state/1, save_state/0]).
+:- module(swimpd, [mpd_init/0, restore_state/1, save_state/1]).
 
 :- use_module(library(http/http_open)).
 :- use_module(library(dcg_core)).
@@ -57,7 +57,6 @@ mpd_init :-
    maplist(init_state, [start_time, dbtime, volume, queue, consume, single], [Now, Now, 50, 0-([]-nothing), 0, 1]),
    retractall(queue(_,_)), assert(queue(0, [])).
 
-save_state :- get_time(Now), format_time(string(Fn), "state-%FT%T.pl", Now), save_state(Fn).
 save_state(Fn) :- with_output_to_file(Fn, listing(mpd_state:state)).
 
 :- meta_predicate restore_state(2).
