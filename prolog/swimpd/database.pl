@@ -10,7 +10,7 @@
 :- use_module(library(memo)).
 :- use_module(library(dcg_core),  [maybe/3]).
 :- use_module(library(listutils), [enumerate/2]).
-:- use_module(state,  [state/2, set_state/2]).
+:- use_module(state,  [state/2, vstate/2, set_vstate/2]).
 :- use_module(tools,  [report//1, report//2, maybe/2, maybe//2, spawn/1]).
 :- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/1, service/2, fetch_new_schedule/1, service_live_url/2, pid_entry/3, pid_tracks/2,
@@ -21,22 +21,22 @@
 pid_id(_, Id) :- flag(songid, Id, Id+1).
 id_pid(Id,PID) :- once(browse(pid_id(PID, Id))).
 is_programme(PID) :- \+service(PID). % it's a programme if it's not a radio station
-set_with(K, P) :- call(P, _, V), set_state(K, V).
 
 %% db_update(+Path:path) is det.
 %  Update database below given path (empty for root, or a service name), by fetches from BBC.
-db_update([]) :- forall(service(S), fetch_new_schedule(S)), set_with(db_stats, db_stats).
-db_update([ServiceName]) :- service(S, ServiceName), fetch_new_schedule(S), set_with(db_stats, db_stats).
+db_update([]) :- forall(service(S), fetch_new_schedule(S)), set_db_stats.
+db_update([ServiceName]) :- service(S, ServiceName), fetch_new_schedule(S), set_db_stats.
 
 %% db_stats(-Stats:list(pair(atom, number)) is det.
-%  Retrieve database stats from state/2, generating them and adding them to state/2 if necessary.
-db_stats(Stats) :- state(db_stats, Stats) -> true; set_with(db_stats, db_stats), db_stats(Stats). % FIXME
+%  Retrieve database stats from vstate/2, generating them and adding them to vstate/2 if necessary.
+db_stats(Stats) :- vstate(db_stats, Stats) -> true; set_db_stats, db_stats(Stats). % FIXME
 
-db_stats(_, [artists-NumServices, albums-M, songs-N, db_playtime-Dur]) :-
+set_db_stats :-
    findall(B-D, brand_dur(B, D), Items), length(Items, N),
    aggregate_all(count, service(_), NumServices),
    aggregate_all(count, distinct(PP,  member(just(PP-_)-_, Items)), M),
-   aggregate_all(sum(D), member(_-D, Items), DurFloat), round(DurFloat, Dur).
+   aggregate_all(sum(D), member(_-D, Items), DurFloat), round(DurFloat, Dur),
+   set_vstate(db_stats, [artists-NumServices, albums-M, songs-N, db_playtime-Dur]).
 brand_dur(B, D) :- service_entry(_, E), entry_maybe_parent('Brand', E, B), entry_prop(E, duration(D)).
 
 %% addid(+Path:path, -Id:maybe(id))// is det.

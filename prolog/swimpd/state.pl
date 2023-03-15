@@ -1,4 +1,5 @@
-:- module(mpd_state, [init_state/2, rm_state/1, upd_state/2, set_state/2, state/2, queue/2, set_queue/2]).
+:- module(mpd_state, [init_state/2, upd_state/2, set_state/2, state/2,
+                      set_vstate/2, rm_vstate/1, vstate/2,  version_queue/2, add_queue/2]).
 :- use_module(library(persistency)).
 
 
@@ -8,13 +9,17 @@
 % pause_state ---> play; pause.
 
 :- persistent state(term, term).
-:- dynamic queue/2.
+:- dynamic vstate/2, version_queue/2.
 :- meta_predicate upd_state(+,2).
 
 :- db_attach('current_state.db', []).
 
 set_state(Key, Val)  :- retractall_state(Key, _), assert_state(Key, Val).
-rm_state(Key)        :- retractall_state(Key, _).
 init_state(Key, Val) :- state(Key, _) -> true; assert_state(Key, Val).
 upd_state(K, P)      :- with_mutex(swimpd, (state(K, S1), call(P, S1, S2), set_state(K, S2))).
-set_queue(V, Songs)  :- assert(queue(V, Songs)).
+
+% volatile state
+set_vstate(Key, Val) :- retractall(vstate(Key, _)), assert(vstate(Key, Val)).
+rm_vstate(Key)       :- retractall(vstate(Key, _)).
+
+add_queue(Version, Songs)  :- assert(version_queue(Version, Songs)).

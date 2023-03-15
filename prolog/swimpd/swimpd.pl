@@ -10,7 +10,7 @@
 :- use_module(library(callutils), [true2/2]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
-:- use_module(state,    [init_state/2, set_state/2, upd_state/2, state/2, queue/2, set_queue/2]).
+:- use_module(state,    [init_state/2, set_state/2, upd_state/2, state/2, set_vstate/2, vstate/2, version_queue/2, add_queue/2]).
 :- use_module(protocol, [notify_all/1, reply_binary/4]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, pid_tracks/2, lsinfo//1, addid//2, db_update/1,
                          db_count//1, db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
@@ -54,8 +54,9 @@
 %  and db update times to now.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
-   maplist(init_state, [start_time, dbtime, volume, queue, consume, single], [Now, Now, 50, 0-([]-nothing), 0, 1]),
-   retractall(queue(_,_)), assert(queue(0, [])).
+   maplist(init_state, [volume, queue, consume, single], [50, 0-([]-nothing), 0, 1]),
+   maplist(set_vstate, [start_time, dbtime], [Now, Now]),
+   retractall(version_queue(_,_)), assert(version_queue(0, [])).
 
 save_state(Fn) :- with_output_to_file(Fn, listing(mpd_state:state)).
 
@@ -68,9 +69,7 @@ restore_state(State) :-
    % FIXME: I think something is missing from here...
    updating_queue_state(\< \< flip(append, Songs)).
 
-revert(V) :-
-   once(order_by([desc(V)], queue(V, Songs))),
-   updating_queue_state(set_songs(Songs)).
+restore_queue_version(V) :- version_queue(V, Songs), updating_queue_state(set_songs(Songs)).
 
 % --- command implementations -----
 :- op(1200, xfx, :->).
@@ -142,7 +141,7 @@ upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K,
 
 upd_and_notify_option(K-V) :- upd_and_notify(K, (set(V) <\> [options])).
 updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
-updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), set_queue(V, Songs).
+updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), add_queue(V, Songs).
 fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
 
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
@@ -151,11 +150,11 @@ preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Song
 report_state(S) --> reading_state(S, report(S)).
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
 reading_queue(Action, _-Q) --> call(Action, Q).
-uptime(T) :- get_time(Now), state(start_time, Then), T is integer(Now - Then).
+uptime(T) :- get_time(Now), vstate(start_time, Then), T is integer(Now - Then).
 
-stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), state(dbtime, D), round(D,DD), db_stats(DBStats).
+stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), vstate(dbtime, D), round(D,DD), db_stats(DBStats).
 update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
-update_and_notify(Path) :- db_update(Path), get_time(Now), set_state(dbtime, Now), notify_all([database]).
+update_and_notify(Path) :- db_update(Path), get_time(Now), set_vstate(dbtime, Now), notify_all([database]).
 
 enact(volume, [], _, _) :- !, debug(mpd(alert), "UNEXPECTED ENACT VOLUME CLAUSE", []).
 enact(volume, [mixer], _, V) :- !, set_volume(V).
@@ -169,7 +168,7 @@ playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(repo
 subrange(just(N:M), L, Sel) :- length(Pre, N), length(PreSel, M), append(PreSel, _, L), append(Pre, Sel, PreSel).
 subrange(nothing, L, L).
 
-plchanges(V, Songs-_) --> {queue(V, OldSongs), enum(Songs, NSongs)}, report_changes(OldSongs, NSongs).
+plchanges(V, Songs-_) --> {version_queue(V, OldSongs), enum(Songs, NSongs)}, report_changes(OldSongs, NSongs).
 report_changes(_, []) --> !.
 report_changes([], NSongs) --> foldl(report_song_info, NSongs).
 report_changes([Old|Olds], [N-New|News]) -->

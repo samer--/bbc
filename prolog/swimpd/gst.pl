@@ -6,8 +6,7 @@
 :- use_module(library(dcg_codes), [fmt//2]).
 :- use_module(library(data/pair), [ffst/3]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
-:- use_module(state, [state/2, set_state/2, rm_state/1]).
-:- use_module(protocol, [notify_all/1]).
+:- use_module(state, [state/2, set_state/2, vstate/2, set_vstate/2, rm_vstate/1]).
 :- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
@@ -56,7 +55,7 @@ gst_message(format,   [],           [format-just(Rate:Fmt:Ch)]) -->
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
-set_global(K-V) :- set_state(K, V). %, notify_all([player]). % Upsets MPD Droid
+set_global(K-V) :- set_vstate(K, V). %, notify_all([player]). % Upsets MPD Droid
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 
@@ -78,7 +77,7 @@ broken(Cs, P) --> break(Cs) // P.
 
 gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
    send("position"), recv(position, just(Elap)),
-   maplist(state, [bitrate, format, duration], [BR, Fmt, Dur]).
+   maplist(vstate, [bitrate, format, duration], [BR, Fmt, Dur]).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
@@ -104,7 +103,7 @@ enact_slave_change(_,          just(S1-_), just(S2-_)) :-
    ).
 stop_if_playing(SongsPos, _) :-
    save_position(SongsPos), send("stop"),
-   maplist(rm_state, [bitrate, format, duration]).
+   maplist(rm_vstate, [bitrate, format, duration]).
 cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    nth0(Pos, Songs, song(_, GetURL, _)), call(GetURL, URL),
    maplist(set_global, [bitrate-nothing, format-nothing, duration-Dur]),
@@ -121,7 +120,7 @@ save_position(Songs-Pos) :-
 
 adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted is Dur - 10.
 save_position(Id, PPos) :-
-   state(duration, Dur),
+   vstate(duration, Dur),
    adjust_position(Dur, PPos, Adjusted),
    debug(gst, 'Saving position at ~w / ~w', [Adjusted, Dur]),
    set_state(position(Id), Adjusted).
