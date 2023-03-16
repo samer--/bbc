@@ -25,7 +25,9 @@ gst_reader_thread(_-(In-Out)) :-
 
 gst_reader(Out) :-
    state(volume, V), set_volume(V),
-   state(queue, _-(Songs-Player)),
+   ( state(player, Player) -> state(queue, _-Songs)
+   ; state(queue, _-(Songs-Player))
+   ),
    fmaybe(pause_player, Player, PausedPlayer),
    debug(gst, "Restoring player as ~w", [PausedPlayer]),
    enact_player_change([]-Songs, nothing, PausedPlayer),

@@ -69,7 +69,10 @@ restore_state(Filename) :-
    read_file_to_terms(Filename, Terms, []),
    findall(K-V, member(state(K,V), Terms), Pairs),
    call(ord_list_to_assoc * sort, Pairs, Assoc),
-   maplist(flip(get_assoc, Assoc), [consume, single, volume, queue], [Consume, Single, Vol, _-(Songs-Player)]),
+   maplist(flip(get_assoc, Assoc), [consume, single, volume], [Consume, Single, Vol]),
+   ( get_assoc(player, Assoc, Player) -> get_assoc(queue, _-Songs)
+   ; get_assoc(queue, _-(Songs-Player))
+   ),
    forall(member(position(Id)-PPos, Pairs), set_state(position(Id), PPos)),
    maplist(upd_and_notify_option, [single-Single, consume-Consume]),
    upd_and_notify(volume, (set(Vol) <\> [mixer])),
