@@ -22,6 +22,9 @@
 /* <module> MPD server for BBC radio programmes.
 
    @todo
+   Reconsider state:
+      factorise queue - version, song list, player state for better use of persistency
+      version_queue/2 -> version tree, undo etc.
    Core
       seek, CLP approach?
       lightweight threads
