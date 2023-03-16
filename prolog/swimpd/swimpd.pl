@@ -61,7 +61,7 @@ mpd_init :-
    maplist(set_vstate, [start_time, dbtime], [Now, Now]),
    retractall(version_queue(_,_)), assert(version_queue(0, [])).
 
-save_state(Fn) :- with_output_to_file(Fn, listing(mpd_state:state)).
+save_state(Filename) :- with_output_to_file(Filename, listing(mpd_state:state)).
 
 :- meta_predicate restore_state(2).
 restore_state(State) :-
