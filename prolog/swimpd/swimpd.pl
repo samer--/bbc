@@ -75,6 +75,12 @@ restore_state(Filename) :-
    upd_and_notify(volume, (set(Vol) <\> [mixer])),
    updating_queue_state(set(Songs-Player) <\> [player]).
 
+   % forall((member(state(K,V), Terms), call(Include, K)), restore_key(K,  V)).
+% restore_key(Key,    V) :- member(Key, [single, consume]), upd_and_notify_option(Key-V).
+% restore_key(volume, V) :- upd_and_notify(volume, (set(V) <\> [mixer])).
+% restore_key(queue,  _-Q) :- updating_queue_state(set(Q) <\> [player]).
+% restore_key(position(Id), P) :- set_state(position(Id), P).
+
 restore_queue_version(V) :- version_queue(V, Songs), updating_queue_state(set_songs(Songs)).
 
 % --- command implementations -----
