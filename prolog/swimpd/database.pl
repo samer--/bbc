@@ -1,4 +1,4 @@
-%% Tyoes used in this module:
+%% Types used in this module:
 %  pid   ~ a BBC programme identifier (for a programme or a service)
 %  id    ~ a local numeric identifier, valid only during one running instance of SWIPD
 %  mpd_filter         ~ a spec for finding items in the database.
@@ -75,7 +75,7 @@ lsinfo([Dir]) --> {directory(Dir, Items)}, foldl(programme(Dir), Items).
 directory('In Progress', Items) :-
    findall(E, (state(position(PID), _), once(pid_entry(_, PID, E))), Items).
 directory(ServiceName, SortedItems) :-
-	service(S, ServiceName),
+   service(S, ServiceName),
    ensure_service_schedule(S),
    findall(E, service_entry(S, E), Items),
    sort_by(entry_sortkey, Items, SortedItems).
@@ -89,8 +89,8 @@ service_dir(S-Name) --> report(directory-Name), maybe(service_updated(S)).
 service_updated(S) --> {service_updated(S, Updated)}, report('Last-Modified'-Updated).
 
 programme(Dir, E) -->
-	{insist(entry_tags(Dir, E, PID, Tags, [])), pid_id(PID, Id)},
-	foldl(report, Tags), report('Id'-Id).
+   {insist(entry_tags(Dir, E, PID, Tags, [])), pid_id(PID, Id)},
+   foldl(report, Tags), report('Id'-Id).
 
 % --- list by tag ---
 service_tag(artist, 'Artist').
@@ -116,9 +116,9 @@ db_count(Filters) -->
 entries_tracks(Es, Tracks) :- call(enumerate * sort_by(entry_date), Es, Tracks).
 track_path(_-E, [SN, PID]) :- maplist(entry_prop(E), [pid(PID), service(SN)]).
 found_track(TrackNo-E) -->
-	{ entry_prop(E, service(ServiceName)),
+   { entry_prop(E, service(ServiceName)),
      insist(entry_tags(ServiceName, E, _PID, Tags, [])) },
-	foldl(report, Tags), report('Track'-TrackNo).
+   foldl(report, Tags), report('Track'-TrackNo).
 
 find(Filters, [Track]) :-
    select(track-TrackAtom, Filters, FiltersRem), atom_number(TrackAtom, TrackNo),
@@ -191,7 +191,7 @@ entry_date(E, Date) :- entry_prop(E, broadcast(Date)).
 entry_tags(Dir, E, PID) -->
    { maplist(entry_prop(E), [pid(PID), synopsis(Syn), duration(Dur)]),
      path_file([Dir, PID], File), to_one_line(Syn, Syn1) },
-	[file-File, 'Comment'-Syn1, duration-Dur],
+   [file-File, 'Comment'-Syn1, duration-Dur],
    tag(title_and_maybe_album(Dir, PID), E),
    foldl(maybe, [tag(service, E), tag(broadcast, E), tag(availability, E)]).
 
