@@ -59,7 +59,7 @@
 %  and db update times to now.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
-   maplist(init_state, [volume, queue, consume, single], [50, 0-([]-nothing), 0, 1]),
+   maplist(init_state, [volume, queue, consume, single], [50, (0-[])-nothing, 0, 1]),
    maplist(set_vstate, [start_time, dbtime], [Now, Now]),
    retractall(version_queue(_,_)), assert(version_queue(0, [])).
 
@@ -70,8 +70,9 @@ restore_state(Filename) :-
    findall(K-V, member(state(K,V), Terms), Pairs),
    call(ord_list_to_assoc * sort, Pairs, Assoc),
    maplist(flip(get_assoc, Assoc), [consume, single, volume], [Consume, Single, Vol]),
-   ( get_assoc(player, Assoc, Player) -> get_assoc(queue, _-Songs)
-   ; get_assoc(queue, _-(Songs-Player))
+   ( get_assoc(player, Assoc, Player) -> get_assoc(queue, _-Songs) % factorised
+   ; get_assoc(queue, (_-Songs)-Player) -> true                    % intermediate (assocl)
+   ; get_assoc(queue, _-(Songs-Player))                            % old
    ),
    forall(member(position(Id)-PPos, Pairs), set_state(position(Id), PPos)),
    maplist(upd_and_notify_option, [single-Single, consume-Consume]),
@@ -151,15 +152,15 @@ upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K,
 upd_and_notify_option(Key-V) :- upd_and_notify(Key,   set(V) <\> [options]).
 updating_play_state(Action)  :- upd_and_notify(queue, fplay_state(Action) <\> [player]).
 updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), add_queue(V, Songs).
-fplay_state(Action, V-Q1, V-Q2) :- call(Action, Q1, Q2).
-fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
+fplay_state(Action, (V-Q)-P1, (V-Q)-P2) :- call(Action, Q-P1, Q-P2).
+fqueue(P, V2, Q2, ((V1-Q1)-P1)-C1, ((V2-Q2)-P2)-C2) :- call(P, (Q1-P1)-C1, (Q2-P2)-C2), succ(V1, V2).
 
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 
 report_state(S) --> reading_state(S, report(S)).
 reading_state(K, Action) --> {state(K, S)}, call(Action, S).
-reading_queue(Action, _-Q) --> call(Action, Q).
+reading_queue(Action, (_-Q)-Player) --> call(Action, Q-Player).
 uptime(T) :- get_time(Now), vstate(start_time, Then), T is integer(Now - Then).
 
 stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), vstate(dbtime, D), round(D,DD), db_stats(DBStats).
@@ -170,8 +171,8 @@ enact(volume, [], _, _) :- !, debug(mpd(alert), "UNEXPECTED ENACT VOLUME CLAUSE"
 enact(volume, [mixer], _, V) :- !, set_volume(V).
 enact(single, _, _, _).
 enact(consume, _, _, _).
-enact(queue, Changes) --> ({member(player, Changes)} -> true2 <\> enact_; true2).
-enact_ --> trans(Ss1, Ss2) <\> enact_player_change(Ss1-Ss2).
+enact(queue, Changes) --> ({member(player, Changes)} -> enact_queue_change; true2).
+enact_queue_change --> trans(_-Songs1, _-Songs2) <\> enact_player_change(Songs1-Songs2).
 
 % -- playlist management --
 playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
@@ -236,8 +237,11 @@ seekcur(abs(PPos)) --> {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 seek_pos_id(Pos, Id, PPos) --> current(Pos, Id), {gst:send(fmt("seek ~f", [PPos]))}. % FIXME: No!!
 current(Pos, Id) --> get(Songs-just(ps(Pos, _))), {nth0(Pos, Songs, song(Id, _, _))}.
 
-eos(player) --> stop, if(state(single, 0), step(play, next)).
-eos(queue)  --> []. % if(state(consume, 1), FIMXE how to do this?
+% works on a state of type (playlist_version * list(song)) * maybe(player_state)
+eos_queue  --> []. % if(state(consume, 1), FIMXE how to do this?
+
+% these work on a state of type list(song) * maybe(player_state) (and not allowed to change song list?)
+eos_player --> stop, if(state(single, 0), step(play, next)).
 stop(Songs-just(ps(Pos, _)), Songs-just(ps(Pos, nothing))).
 step(Op, Dir) --> get(Songs-just(ps(Pos, _))), ({upd_pos(Dir, Songs, Pos, Pos1)} -> play(Op, Pos1, _); \> set(nothing)).
 upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
@@ -269,8 +273,9 @@ build_cursor(=, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % (T=start, 
 build_cursor(=, =, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (T=start=end)
 build_cursor(>, <, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (start, T, end)
 build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], nothing, Aft)). % (start,  T=end)
-% ------------------------------
 
+% --------------------------------------------------------------
+% play//1, play//2, play//3 - state transformers on list(song) * maybe(player_state)
 play(nothing) --> get(_-just(ps(Pos, _))), !, play(Pos, _).
 play(nothing) --> play(0, _).
 play(just(Pos)) --> play(Pos, _).
@@ -286,7 +291,7 @@ update_play_state(keep, Pos, I, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(
 update_slave(Dur, P-_, P-0.0/Dur).
 
 gst:id_wants_bookmark(PID) :- is_programme(PID).
-gst:notify_eos :- updating_play_state(eos(player)), updating_queue_state(eos(queue)).
+gst:notify_eos :- updating_play_state(eos_player), updating_queue_state(eos_queue).
 
 % -- status --
 report_status((Ver-(Songs-PS))) -->
