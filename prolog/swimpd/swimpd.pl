@@ -29,7 +29,6 @@
       review process synch and comms, see eg Erlang approach
 
    Control
-      auto next as well as single (handle stored position correctly too)
       rewind if playing track where current position is at end
       Better seekable timeline for radio streams
       Stop GST player after some time to release audio device
@@ -50,6 +49,9 @@
       Use tracklist for cool stuff:
       - seek to nth/prev/next track
       - query current track info
+
+   Playlists
+      More playlist protocol: listing and loading
  */
 
 %! mpd_init is det.
@@ -143,9 +145,10 @@ reply_url_bin(URL, Offset) :-
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
 upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K, Changes, S1, S2), !.
 
-upd_and_notify_option(K-V) :- upd_and_notify(K, (set(V) <\> [options])).
-updating_play_state(Action) :- upd_and_notify(queue, (\< fsnd(Action), \> [player])).
+upd_and_notify_option(Key-V) :- upd_and_notify(Key,   set(V) <\> [options]).
+updating_play_state(Action)  :- upd_and_notify(queue, fplay_state(Action) <\> [player]).
 updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), add_queue(V, Songs).
+fplay_state(Action, V-Q1, V-Q2) :- call(Action, Q1, Q2).
 fqueue(P, V2, Songs, (V1-Q1)-C1, (V2-Q2)-C2) :- call(P, Q1-C1, Q2-C2), succ(V1, V2), Q2 = Songs-_.
 
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
