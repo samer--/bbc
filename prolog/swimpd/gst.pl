@@ -96,8 +96,8 @@ enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
 enact_slave_change(_,          nothing, nothing) :- !.
 enact_slave_change(SongsPos-_, just(S), nothing) :- !, stop_if_playing(SongsPos, S).
 enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, cue_and_maybe_play(SongsPos, S-Au).
-enact_slave_change(_,          just(S1-_), just(S2-_)) :-
-   (  S1-S2 = play-pause -> send("pause")
+enact_slave_change(_-SongsPos, just(S1-_), just(S2-_)) :-
+   (  S1-S2 = play-pause -> send("pause"), save_position(SongsPos)
    ;  S1-S2 = pause-play -> send("play")
    ;  true
    ).
