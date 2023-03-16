@@ -7,7 +7,7 @@
 :- use_module(library(data/pair), [fsnd/3]).
 :- use_module(library(snobol),    [any//1, notany//1, break//1, arb//0, arbno//1]).
 :- use_module(library(insist),    [insist/1]).
-:- use_module(library(callutils), [true2/2]).
+:- use_module(library(callutils), [true2/2, (*)/4]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
 :- use_module(state,    [init_state/2, set_state/2, upd_state/2, state/2, set_vstate/2, vstate/2, version_queue/2, add_queue/2]).
@@ -63,14 +63,15 @@ mpd_init :-
 
 save_state(Filename) :- with_output_to_file(Filename, listing(mpd_state:state)).
 
-:- meta_predicate restore_state(2).
-restore_state(State) :-
-   maplist(State, [volume, queue, single, consume], [Vol, _-(Songs-_), Single, Consume]),
-   forall((member(song(Id, _, _), Songs), call(State, position(Id), PPos)), set_state(position(Id), PPos)),
-   upd_and_notify(volume, (set(Vol) <\> [mixer])),
+restore_state(Filename) :-
+   read_file_to_terms(Filename, Terms, []),
+   findall(K-V, member(state(K,V), Terms), Pairs),
+   call(ord_list_to_assoc * sort, Pairs, Assoc),
+   maplist(flip(get_assoc, Assoc), [consume, single, volume, queue], [Consume, Single, Vol, _-(Songs-Player)]),
+   forall(member(position(Id)-PPos, Pairs), set_state(position(Id), PPos)),
    maplist(upd_and_notify_option, [single-Single, consume-Consume]),
-   % FIXME: I think something is missing from here...
-   updating_queue_state(\< \< flip(append, Songs)).
+   upd_and_notify(volume, (set(Vol) <\> [mixer])),
+   updating_queue_state(set(Songs-Player) <\> [player]).
 
 restore_queue_version(V) :- version_queue(V, Songs), updating_queue_state(set_songs(Songs)).
 
