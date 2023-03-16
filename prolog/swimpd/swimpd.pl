@@ -22,9 +22,6 @@
 /* <module> MPD server for BBC radio programmes.
 
    @todo
-   Reconsider state:
-      factorise queue - version, song list, player state for better use of persistency
-      version_queue/2 -> version tree, undo etc.
    Core
       seek, CLP approach?
       lightweight threads
@@ -38,8 +35,11 @@
       Stop GST player after some time to release audio device
 
    State management:
+      factorise queue - version, song list, player state for better use of persistency
+      version_queue/2 -> version tree, undo etc. (plchanges?)
       multiple sessions
       persistence
+      selective restore - everything vs just queue.
 
    Protocol:
       clearerror (check error in status?) consume, mutliple group
