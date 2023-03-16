@@ -193,9 +193,8 @@ insert_at(Pos, P, Songs1, Songs2) :-
    rep(Pos, copy, Songs1-Songs2, Suffix-PrefixT),
    phrase(P, PrefixT, Suffix).
 
-set_songs(Songs) --> \< trans(Q, (Songs-nothing)), \> player_if_queue_playing(Q).
-player_if_queue_playing(_-PS) --> maybe(player_if_playstate_playing, PS).
-player_if_playstate_playing(_) --> [player].
+set_songs(Songs) --> trans(_-Player, (Songs-nothing)) <\> maybe(player_if_playing, Player).
+player_if_playing(_) --> [player].
 
 delete_range(nothing, Id) --> \< get(_-just(ps(Pos, _))), delete(Pos, Id).
 delete_range(just(M:N), Ids) --> {numlist(M, N, Is), reverse(Is, [_|Js])}, foldl(delete, Js, Ids).
