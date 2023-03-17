@@ -10,7 +10,8 @@
 :- use_module(library(callutils), [true2/2, (*)/4]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
-:- use_module(state,    [init_state/2, set_state/2, upd_state/2, state/2, set_vstate/2, vstate/2, version_queue/2, add_queue/2]).
+:- use_module(state,    [init_state/2, set_states/2, upd_states/2, state/2, states/2,
+                         set_vstate/2, vstate/2, version_queue/2, add_queue/2]).
 :- use_module(protocol, [notify_all/1, reply_binary/4]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, pid_tracks/2, lsinfo//1, addid//2, db_update/1,
                          db_count//1, db_find//2, db_find/3, db_list//3, db_image/3, db_stats/1]).
@@ -34,11 +35,9 @@
       Stop GST player after some time to release audio device
 
    State management:
-      factorise queue - version, song list, player state for better use of persistency
       version_queue/2 -> version tree, undo etc. (plchanges?)
-      multiple sessions
-      persistence
       selective restore - everything vs just queue.
+      locking around state read/writes
 
    Protocol:
       clearerror (check error in status?) consume, mutliple group
@@ -56,10 +55,15 @@
 
 %! mpd_init is det.
 %  Set state of MPD to an empty queue with version 0, volume set to 50%, and start
-%  and db update times to now.
+%  and db update times to now. States:
+%  queue  : pair(integer, list(song))
+%  player : maybe(play_state).
+%  play_state ---> ps(natural, maybe(pair(pause_state, au_state))).
+%  au_state   ---> au(duration, elapsed, bitrate, format).
+%  pause_state ---> play; pause.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
-   maplist(init_state, [volume, queue, consume, single], [50, (0-[])-nothing, 0, 1]),
+   maplist(init_state, [volume, queue, player, consume, single], [50, 0-[], nothing, 0, 1]),
    maplist(set_vstate, [start_time, dbtime], [Now, Now]),
    retractall(version_queue(_,_)), assert(version_queue(0, [])).
 
@@ -69,14 +73,11 @@ restore_state(Filename) :-
    read_file_to_terms(Filename, Terms, []),
    findall(K-V, member(state(K,V), Terms), Pairs),
    call(ord_list_to_assoc * sort, Pairs, Assoc),
-   maplist(flip(get_assoc, Assoc), [consume, single, volume], [Consume, Single, Vol]),
-   ( get_assoc(player, Assoc, Player) -> get_assoc(queue, _-Songs) % factorised
-   ; get_assoc(queue, (_-Songs)-Player) -> true                    % intermediate (assocl)
-   ; get_assoc(queue, _-(Songs-Player))                            % old
-   ),
-   forall(member(position(Id)-PPos, Pairs), set_state(position(Id), PPos)),
+   maplist(flip(get_assoc, Assoc), [consume, single, volume, player, queue],
+                                   [Consume, Single, Volume, Player, _-Songs]),
+   forall(member(position(Id)-PPos, Pairs), set_states(position(Id), PPos)),
    maplist(upd_and_notify_option, [single-Single, consume-Consume]),
-   upd_and_notify(volume, (set(Vol) <\> [mixer])),
+   upd_and_notify(volume, (set(Volume) <\> [mixer])),
    updating_queue_state(set(Songs-Player) <\> [player]).
 
 restore_queue_version(V) :- version_queue(V, Songs), updating_queue_state(set_songs(Songs)).
@@ -113,15 +114,15 @@ command(seekid,   (a(pid(Id)), a(num(PPos))))  :-> {updating_play_state(seek_pos
 command(seekcur,  a(seek_spec(Spec)))          :-> {updating_play_state(seekcur(Spec))}.
 command(update,   maybe_quoted_path(Path)) :-> update_db(Path).
 command(lsinfo,   maybe_quoted_path(Path)) :-> lsinfo(Path).
-command(playlistinfo,  maybe(a(range), R)) :-> reading_state(queue, reading_queue(playlistinfo(R))).
-command(playlistid,    [])                 :-> reading_state(queue, reading_queue(playlistinfo(nothing))).
-command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queue(plchanges(V))).
-command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
+command(playlistinfo,  maybe(a(range), R)) :-> reading_state(queue, playlistinfo(R)).
+command(playlistid,    [])                 :-> reading_state(queue, playlistinfo(nothing)).
+command(plchanges,     a(nat(V)))          :-> reading_state(queue, plchanges(V)).
+command(currentsong,   [])                 :-> reading_state(queue-player, currentsong).
 command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
 command(tagtypes, foldl(a(atom), [_Cmd|_Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue, report_status).
+command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue-player, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
 command(list,     list_args(Tag, Filters, GroupBy)) :-> db_list(Tag, Filters, GroupBy).
@@ -147,22 +148,20 @@ reply_url_bin(URL, Offset) :-
 
 % -- interaction with state --
 upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
+reading_state(K, Action) --> {ex(states(K, V))}, call(Action, V).
 upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K, Changes, S1, S2), !.
 
-upd_and_notify_option(Key-V) :- upd_and_notify(Key,   set(V) <\> [options]).
-updating_play_state(Action)  :- upd_and_notify(queue, fplay_state(Action) <\> [player]).
-updating_queue_state(Action) :- upd_and_notify(queue, (fqueue(Action,V,Songs), \> [playlist])), add_queue(V, Songs).
-fplay_state(Action, (V-Q)-P1, (V-Q)-P2) :- call(Action, Q-P1, Q-P2).
-fqueue(P, V2, Q2, ((V1-Q1)-P1)-C1, ((V2-Q2)-P2)-C2) :- call(P, (Q1-P1)-C1, (Q2-P2)-C2), succ(V1, V2).
+upd_and_notify_option(Key-V) :- upd_and_notify(Key, set(V) <\> [options]).
+updating_queue_state(Action) :- upd_and_notify(queue-player, fqueue(Action,V,Songs)), add_queue(V, Songs). %
+updating_play_state(Action)  :- upd_and_notify(player, fplay_state(Action) <\> [player]).
+fplay_state(Action, P1, P2)  :- state(queue, _-Q), call(Action, Q-P1, Q-P2). % NB. Action must not change Q.
+fqueue(P, V2, Q2, ((V1-Q1)-P1)-[playlist|C1], ((V2-Q2)-P2)-C2) :- call(P, (Q1-P1)-C1, (Q2-P2)-C2), succ(V1, V2).
 
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 
-report_state(S) --> reading_state(S, report(S)).
-reading_state(K, Action) --> {state(K, S)}, call(Action, S).
-reading_queue(Action, (_-Q)-Player) --> call(Action, Q-Player).
+report_state(K) --> reading_state(K, report(K)).
 uptime(T) :- get_time(Now), vstate(start_time, Then), T is integer(Now - Then).
-
 stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), vstate(dbtime, D), round(D,DD), db_stats(DBStats).
 update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
 update_and_notify(Path) :- db_update(Path), get_time(Now), set_vstate(dbtime, Now), notify_all([database]).
@@ -171,22 +170,23 @@ enact(volume, [], _, _) :- !, debug(mpd(alert), "UNEXPECTED ENACT VOLUME CLAUSE"
 enact(volume, [mixer], _, V) :- !, set_volume(V).
 enact(single, _, _, _).
 enact(consume, _, _, _).
-enact(queue, Changes) --> ({member(player, Changes)} -> enact_queue_change; true2).
+enact(player, Changes) --> ({member(player, Changes)} -> {state(queue, _-Ss)}, enact_player_change(Ss-Ss); true2).
+enact(queue-player, Changes) --> ({member(player, Changes)} -> enact_queue_change; true2).
 enact_queue_change --> trans(_-Songs1, _-Songs2) <\> enact_player_change(Songs1-Songs2).
 
 % -- playlist management --
-playlistinfo(R, Songs-_) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
+playlistinfo(R, _-Songs) --> {enum(Songs, NS), subrange(R, NS, NS2)}, foldl(report_song_info, NS2).
 subrange(just(N:M), L, Sel) :- length(Pre, N), length(PreSel, M), append(PreSel, _, L), append(Pre, Sel, PreSel).
 subrange(nothing, L, L).
 
-plchanges(V, Songs-_) --> {version_queue(V, OldSongs), enum(Songs, NSongs)}, report_changes(OldSongs, NSongs).
+plchanges(V, _-Songs) --> {version_queue(V, OldSongs), enum(Songs, NSongs)}, report_changes(OldSongs, NSongs).
 report_changes(_, []) --> !.
 report_changes([], NSongs) --> foldl(report_song_info, NSongs).
 report_changes([Old|Olds], [N-New|News]) -->
    ({Old=New} -> []; report_song_info(N-New)),
    report_changes(Olds, News).
 
-currentsong(Songs-PS) --> maybe(currentsong(Songs), PS).
+currentsong((_-Songs)-PS) --> maybe(currentsong(Songs), PS).
 currentsong(Songs, ps(Pos, _)) --> {nth0(Pos, Songs, Song)}, report_song_info(Pos-Song).
 
 report_song_info(Pos-song(PID, _, Tags)) --> {pid_id(PID, Id)}, foldl(report, Tags), foldl(report, ['Pos'-Pos, 'Id'-Id]).
@@ -294,7 +294,7 @@ gst:id_wants_bookmark(PID) :- is_programme(PID).
 gst:notify_eos :- updating_play_state(eos_player), updating_queue_state(eos_queue).
 
 % -- status --
-report_status((Ver-(Songs-PS))) -->
+report_status((Ver-Songs)-PS) -->
    {length(Songs, Len)},
    foldl(report, [repeat-0, random-0, playlist-Ver, playlistlength-Len]),
    report_play_state(PS, Songs).
