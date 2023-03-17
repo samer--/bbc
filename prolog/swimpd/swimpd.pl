@@ -10,7 +10,7 @@
 :- use_module(library(callutils), [true2/2, (*)/4]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(bbc(bbc_tools), [enum/2]).
-:- use_module(state,    [init_state/2, set_states/2, upd_states/2, state/2, states/2,
+:- use_module(state,    [excl/1, init_state/2, set_states/2, upd_states/2, state/2, states/2,
                          set_vstate/2, vstate/2, version_queue/2, add_queue/2]).
 :- use_module(protocol, [notify_all/1, reply_binary/4]).
 :- use_module(database, [is_programme/1, id_pid/2, pid_id/2, pid_tracks/2, lsinfo//1, addid//2, db_update/1,
@@ -37,7 +37,6 @@
    State management:
       version_queue/2 -> version tree, undo etc. (plchanges?)
       selective restore - everything vs just queue.
-      locking around state read/writes
 
    Protocol:
       clearerror (check error in status?) consume, mutliple group
@@ -67,7 +66,7 @@ mpd_init :-
    maplist(set_vstate, [start_time, dbtime], [Now, Now]),
    retractall(version_queue(_,_)), assert(version_queue(0, [])).
 
-save_state(Filename) :- with_output_to_file(Filename, listing(mpd_state:state)).
+save_state(Filename) :- with_output_to_file(Filename, excl(listing(mpd_state:state))).
 
 restore_state(Filename) :-
    read_file_to_terms(Filename, Terms, []),
@@ -147,8 +146,8 @@ reply_url_bin(URL, Offset) :-
       close(Stream)).
 
 % -- interaction with state --
-upd_and_notify(K, P) :- upd_state(K, upd_and_enact(K, P, Changes)), sort(Changes, Changed), notify_all(Changed).
-reading_state(K, Action) --> {ex(states(K, V))}, call(Action, V).
+reading_state(K, Action) --> {excl(states(K, V))}, call(Action, V).
+upd_and_notify(K, P) :- excl(upd_states(K, upd_and_enact(K, P, Changes))), sort(Changes, Changed), notify_all(Changed).
 upd_and_enact(K, P, Changes, S1, S2) :- call_dcg(P, S1-Changes, S2-[]), enact(K, Changes, S1, S2), !.
 
 upd_and_notify_option(Key-V) :- upd_and_notify(Key, set(V) <\> [options]).

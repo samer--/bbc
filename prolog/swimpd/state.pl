@@ -1,11 +1,12 @@
-:- module(mpd_state, [attach/1, init_state/2, upd_states/2, set_states/2, state/2, states/2,
+:- module(mpd_state, [excl/1, attach/1, init_state/2, upd_states/2, set_states/2, state/2, states/2,
                       set_vstate/2, rm_vstate/1, vstate/2,  version_queue/2, add_queue/2]).
 :- use_module(library(persistency)).
 
 :- persistent state(term, term).
 :- dynamic vstate/2, version_queue/2.
-:- meta_predicate upd_states(+,2).
+:- meta_predicate excl(0), upd_states(+,2).
 
+excl(G)          :- with_mutex(swimpd, G).
 attach(DBFile)   :- db_attach(DBFile, []).
 init_state(K, V) :- state(K, _) -> true; assert_state(K, V).
 upd_states(K, P) :- states(K, S1), call(P, S1, S2), set_states(K, S2).
