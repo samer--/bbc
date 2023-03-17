@@ -1,5 +1,5 @@
 :- module(bbc_db, [service/1, service/2, service_updated/2, fetch_new_schedule/1, service_live_url/2,
-                   service_entry/2, pid_entry/3, entry_prop/2, entry_xurl/3, prog_xurl/3,
+                   service_entry/2, pid_entry/3, pid_tracks/2, entry_prop/2, entry_xurl/3, prog_xurl/3,
                    interval_times/3, entry_maybe_parent/3, entry_parents/2, pid_version/2, version_prop/2]).
 
 :- use_module(library(sgml)).
@@ -51,12 +51,22 @@ service(p00fzl9p, bbc_world_service,    'BBC World Service Online').
 
 % --- getting the schedules -------------------------------------------------
 
+%% fetch_new_schedule(+S:service) is det.
+%  Attempt to get and assert into the local (volatile) database the schedule for the given service.
+%  First, attempt to get XML schedule, and if that fails, try to get JSON schedule by scraping 3 weeks
+%  worth of schedule web pages. Results are added to time_service_schedule/3 and snapshot_time_service/2.
+%  Any schedules downloaded more than 60 days ago are deleted.
 fetch_new_schedule(S) :-
    get_time(Now),
    catch(fetch_new_schedule_xml(S, Schedule), error(existence_error(_, _), _),
          fetch_new_schedule_json(3, S, Schedule)),
    assert(time_service_schedule(Now, S, Schedule)),
-   assert(snapshot_time_service(Now, S)).
+   assert(snapshot_time_service(Now, S)),
+   forall((snapshot_time_service(T, S), T < Now - 60 * 24 * 3600),
+          (format_time(string(Downloaded), '%FT%T%z', T), service(S, ServiceName),
+           debug(bbc, "Dropping schedule for '~w' downloaded ~w...", [ServiceName, Downloaded]),
+           retract(snapshot_time_service(T, S)),
+           retract(time_service_schedule(T, S, _)))).
 
 % -- new JSON schedule from web page
 service_web_sched(Suffix, S, html, 'https://www.bbc.co.uk/schedules/~s~s'-[S, Suffix]) :- service(S).
@@ -123,16 +133,26 @@ xpath_interval(As, E, Path, T1-T2) :- maplist(xpath_attr_time(E, Path), As, [T1,
 xpath_attr_time(E, Path, A, ts(Time)) :- xpath(E, Path, E1), xpath(E1, /self(@A), T), parse_time(T, iso_8601, Time).
 
 % --- schedule access -----------------
-schedule(latest(S), Schedule) :- service_schedule(S, Schedule).
-schedule(any,       Schedule) :- ordered_service_schedule(_, Schedule).
-service_schedule(S, Schedule) :- service(S), once(ordered_service_schedule(S, Schedule)).
+
+%% service_updated(+S: service, -T:atom) is semidet.
+%% service_updated(-S: service, -T:atom) is nondet.
+%  True when the schedule of services S was updated most recently at time T (formatted time).
 service_updated(S, Updated) :-
    service(S), aggregate_all(max(T), snapshot_time_service(T, S), TMax),
    format_time(atom(Updated), '%FT%T%z', TMax).
+
 ordered_service_schedule(S, Sch) :- order_by([desc(T)], snapshot_time_service(T, S)), time_service_schedule(T, S, Sch).
 
-pid_entry(Mode, PID, E)  :- schedule(Mode, ETree), get_assoc(PID, ETree, E).
-service_entry(S, E) :- service_schedule(S, ETree), gen_assoc(_, ETree, E).
+%% pid_entry(+S:service, +P:pid, -E:entry) is semidet.
+%% pid_entry(-S:service, +P:pid, -E:entry) is nondet.
+%  True when E is the latest known entry for a PID in the schedules for service S.
+pid_entry(S, PID, E) :- distinct(S-PID, (ordered_service_schedule(S, Schedule), get_assoc(PID, Schedule, E))).
+
+%% service_entry(+S:service, -E:entry) is semidet.
+%% service_entry(-S:service, -E:entry) is nondet.
+%  True when E is the latest known entry for a PID in the schedules for service S.
+service_entry(S, E) :- service(S), distinct(PID, service_entry_pid(S, E, PID)).
+service_entry_pid(S, E, PID) :- ordered_service_schedule(S, ETree), gen_assoc(_, ETree, E), entry_pid(E, PID).
 
 % --- entry attributes ----------------
 entry_prop(entry(Props), Prop) :- member(Prop, Props).

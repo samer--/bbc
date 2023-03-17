@@ -17,7 +17,7 @@
 :- use_module(gst,      [gst_audio_info/2, enact_player_change/3, set_volume/1]).
 :- use_module(tools,    [quoted//1, quoted//2, select_nth/4, (+)//1, nat//1, decimal//0, fnth/5, flip/4,
                          report//1, report//2, num//1, atom//1, maybe//2, maybe/2, fmaybe/3, fjust/3,
-                         thread/2, registered/2, spawn/1, setup_stream/2]).
+                         registered/2, spawn/1, setup_stream/2]).
 
 /* <module> MPD server for BBC radio programmes.
 
@@ -111,7 +111,7 @@ command(plchanges,     a(nat(V)))          :-> reading_state(queue, reading_queu
 command(currentsong,   [])                 :-> reading_state(queue, reading_queue(currentsong)).
 command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
-command(tagtypes, foldl(a(atom), [Cmd|Args])) :-> [].
+command(tagtypes, foldl(a(atom), [_Cmd|_Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
 command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
