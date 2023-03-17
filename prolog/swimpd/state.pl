@@ -1,22 +1,21 @@
-:- module(mpd_state, [init_state/2, upd_state/2, set_state/2, state/2,
+:- module(mpd_state, [excl/1, attach/1, init_state/2, upd_states/2, set_states/2, state/2, states/2,
                       set_vstate/2, rm_vstate/1, vstate/2,  version_queue/2, add_queue/2]).
 :- use_module(library(persistency)).
 
-
-% state = pair(pair(integer, pair(list(song), maybe(play_state))), dict).
-% play_state ---> ps(natural, maybe(pair(pause_state, au_state))).
-% au_state   ---> au(duration, elapsed, bitrate, format).
-% pause_state ---> play; pause.
-
 :- persistent state(term, term).
 :- dynamic vstate/2, version_queue/2.
-:- meta_predicate upd_state(+,2).
+:- meta_predicate excl(0), upd_states(+,2).
 
-:- db_attach('current_state.db', []).
+excl(G)          :- with_mutex(swimpd, G).
+attach(DBFile)   :- db_attach(DBFile, []).
+init_state(K, V) :- state(K, _) -> true; assert_state(K, V).
+upd_states(K, P) :- states(K, S1), call(P, S1, S2), set_states(K, S2).
 
-set_state(Key, Val)  :- retractall_state(Key, _), assert_state(Key, Val).
-init_state(Key, Val) :- state(Key, _) -> true; assert_state(Key, Val).
-upd_state(K, P)      :- with_mutex(swimpd, (state(K, S1), call(P, S1, S2), set_state(K, S2))).
+states(K1-K2, V1-V2) :- !, states(K1,V1), states(K2,V2).
+states(K,V)          :- state(K,V).
+
+set_states(K1-K2, V1-V2) :- set_states(K1,V1), set_states(K2,V2).
+set_states(K,V)          :- debug(state, "Setting state ~w to ~w", [K,V]), retractall_state(K, _), assert_state(K, V).
 
 % volatile state
 set_vstate(Key, Val) :- retractall(vstate(Key, _)), assert(vstate(Key, Val)).
