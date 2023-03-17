@@ -162,8 +162,8 @@ preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Song
 report_state(K) --> reading_state(K, report(K)).
 uptime(T) :- get_time(Now), vstate(start_time, Then), T is integer(Now - Then).
 stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), vstate(dbtime, D), round(D,DD), db_stats(DBStats).
-update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
-update_and_notify(Path) :- db_update(Path), get_time(Now), set_vstate(dbtime, Now), notify_all([database]).
+update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_db_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
+update_db_and_notify(Path) :- db_update(Path), get_time(Now), set_vstate(dbtime, Now), notify_all([database]).
 
 enact(volume, [], _, _) :- !, debug(mpd(alert), "UNEXPECTED ENACT VOLUME CLAUSE", []).
 enact(volume, [mixer], _, V) :- !, set_volume(V).
