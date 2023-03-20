@@ -34,7 +34,7 @@ get_as(pls,  URL, Codes) :- with_url(URL, In, read_file_to_codes(In, Codes, []))
 uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
    format(string(URL), Pattern, Args),
-   debug(bbc, "Getting as ~w: ~w", [Fmt, URL]),
+   debug(swimpd(bbc, s(s(0))), "Getting as ~w: ~w", [Fmt, URL]),
    get_as(Fmt, URL, R), R=Result. % some getters apparently not steadfast.
 
 % --- service database
@@ -64,7 +64,7 @@ fetch_new_schedule(S) :-
    assert(snapshot_time_service(Now, S)),
    forall((snapshot_time_service(T, S), T < Now - 60 * 24 * 3600),
           (format_time(string(Downloaded), '%FT%T%z', T), service(S, ServiceName),
-           debug(bbc, "Dropping schedule for '~w' downloaded ~w...", [ServiceName, Downloaded]),
+           debug(swimpd(bbc,s(s(0))), "Dropping schedule for '~w' downloaded ~w...", [ServiceName, Downloaded]),
            retract(snapshot_time_service(T, S)),
            retract(time_service_schedule(T, S, _)))).
 

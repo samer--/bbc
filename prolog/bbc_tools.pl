@@ -6,10 +6,10 @@
 sort_by(P, X1, X2) :- maplist(pairf(P), X1, KX1), keysort(KX1, KX2), zip(_, X2, KX2).
 pairf(P, X, Y-X) :- call(P, X, Y).
 
-log_failure(G) :- G -> true; debug(bbc, 'failed: ~p', [G]), fail.
+log_failure(G) :- G -> true; debug(swimpd(bbc, s(s(s(0)))), 'failed: ~p', [G]), fail.
 log_and_succeed(G) :-
-   (  catch(G, Ex, debug(bbc, 'Exception on ~q: ~p', [G, Ex])) -> true
-   ;  debug(bbc, 'Failed on ~q', [G])
+   (  catch(G, Ex, debug(swimpd(bbc,0), 'Exception on ~q: ~p', [G, Ex])) -> true
+   ;  debug(swimpd(bbc,s(s(s(0)))), 'Failed on ~q', [G])
    ).
 
 enum(Xs, IXs) :- foldl(enum, Xs, IXs, 0, _).

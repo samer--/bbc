@@ -35,9 +35,9 @@ gst_reader(Out) :-
 
 % pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
-gst_handle(end_of_file, _, _) :- !, debug(gst, 'End of stream from gst', []).
+gst_handle(end_of_file, _, _) :- !, debug(swimpd(gst, s(s(0))), 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
-   debug(gst, '~~> ~s', [Codes]),
+   debug(swimpd(gst, 0), '<~~ ~s', [Codes]),
    insist(phrase(parse_head(Head, Tail), Codes)),
    (  phrase(gst_message(Head, Msgs, Globals), Tail)
    -> maplist(thread_send_message(Self), Msgs),
@@ -63,7 +63,7 @@ gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 
 send(P) :-
    thread(gst(In), _), phrase(P, Codes),
-   debug(gst, '<~~ ~s', [Codes]),
+   debug(swimpd(gst,0), '~~> ~s', [Codes]),
    format(In, "~s\n", [Codes]).
 
 recv(K, MV) :-
@@ -122,7 +122,7 @@ adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted 
 save_position(Id, PPos) :-
    vstate(duration, Dur),
    adjust_position(Dur, PPos, Adjusted),
-   debug(gst, 'Saving position at ~w / ~w', [Adjusted, Dur]),
+   debug(swimpd(gst,s(s(0))), 'Saving position at ~w / ~w', [Adjusted, Dur]),
    set_states(position(Id), Adjusted).
 
 restore_position(Songs-Pos) :-

@@ -20,7 +20,7 @@ transduce(Q)       :- read_command(Cmd), thread_send_message(Q, Cmd), transduce(
 
 read_command(cmd(Head, Tail)) :-
    read_line_to_codes(current_input, Codes),
-   debug(mpd(command), ">> ~s", [Codes]),
+   debug(swimpd(protocol, 0), "<< ~s", [Codes]),
    insist(parse_head(Head, Tail, Codes, [])).
 
 execute_string(Cmd) :-
@@ -72,7 +72,7 @@ sub_reply(list_ok) :- output("list_OK").
 
 reply_phrase(P) :-
    phrase(P, Codes), format("~s", [Codes]),
-   debug(mpd(reply), "<< ~s|", [Codes]).
+   debug(swimpd(protocol, 0), ">> ~s|", [Codes]).
 
 reply(ok) :- output("OK").
 reply(ack(Pos-SubCmd, err(Code, Fmt, Args))) :-
@@ -80,7 +80,7 @@ reply(ack(Pos-SubCmd, err(Code, Fmt, Args))) :-
    output(R).
 
 output(R) :-
-   debug(mpd(command), "<< ~s", [R]),
+   debug(swimpd(protocol, 0), ">> ~s", [R]),
    write(R), nl, flush_output.
 
 reply_binary(Type, Total, Size, Stream) :-

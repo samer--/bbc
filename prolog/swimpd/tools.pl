@@ -11,7 +11,9 @@
 :- meta_predicate spawn(0), registered(+,0).
 spawn(G) :- thread_create(G, _, [detached(true)]).
 setup_stream(Props, S) :- maplist(set_stream(S), Props).
-registered(N, G) :- thread_self(Id), setup_call_cleanup(assert(thread(N, Id)), G, retract(thread(N, Id))).
+registered(N, G) :- thread_self(Id), setup_call_cleanup(register(N, Id), G, unregister(N, Id)).
+register(N, Id) :- debug(swimpd(tools, s(0)), 'Registering thread ~w as ~w', [Id, N]), assert(thread(N, Id)).
+unregister(N, Id) :- debug(swimpd(tools, s(0)), 'Unregistering thread ~w as ~w', [Id, N]), retract(thread(N, Id)).
 
 parse_head(Head, Tail) --> break(` `) // list(H), list(Tail), {atom_codes(Head, H)}.
 
