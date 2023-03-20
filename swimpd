@@ -1,30 +1,47 @@
-#!/usr/bin/env swipl
+#!/usr/bin/env -S swipl -O -f none -g sync(main) -t halt
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
 
+:- set_prolog_flag(optimise_debug, false).
+:- set_prolog_flag(message_context, [time, thread]).
+
+:- use_module(library(main)).
 :- use_module(library(apply_macros)).
 :- use_module(library(dcg_macros)). % NB. import into user means these apply globally
+
 :- use_module(prolog/swimpd/telnetd,  [telnet_server/3]).
 :- use_module(prolog/swimpd/protocol, [mpd_interactor/0]).
 :- use_module(prolog/swimpd/gst,      [start_gst_thread/0]).
-:- use_module(prolog/swimpd/state,    [attach/1]).
 :- use_module(prolog/swimpd/swimpd,   [mpd_init/0, restore_state/1, save_state/1]).
-:- use_module(library(fileutils), [with_output_to_file/2]).
-:- use_module(library(rcutils)).
+:- use_module(prolog/swimpd/state,    [attach/1]).
+:- use_module(prolog/swimpd/tools,    [thread/2]).
+
+async(G) :- thread_create(G, _, [detached(true), alias(mpd_server)]).
+sync(G) :- on_signal(int, _, kill_server), on_signal(hup, _, kill_server), call(G), writeln('FINISHED').
+kill_server(Signal) :- 
+   debug(swimpd(swimpd,s(s(0))), 'Killing swimpd server on signal ~w', [Signal]), 
+   throw(shutdown).
+kill_satellites :-
+   forall(thread(client, Id), thread_signal(Id, throw(hangup))),
+   thread_signal(gst_slave, throw(shutdown)).
+
 
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
 
-:- meta_predicate detached(+,0).
-detached(Alias, Goal) :- thread_create(Goal, _, [detached(true), alias(Alias)]), confirm_on_halt.
-mpd_server(Port, Options) :- telnet_server(mpd_interactor, Port, Options).
+opt_type(p, port, integer).
+opt_type(debug, debug, atom).
 
-runner(interactive, detached(mpd_server)).
-runner(foreground,  call).
+opt_help(port, 'Port number on which MPD service is provided').
+opt_help(debug, 'Enable debugging messages on this topic').
 
-main([State, PortAtom, Mode]) :- 
-   atom_number(PortAtom, Port), runner(Mode, Runner), attach(State), mpd_init, 
-   start_gst_thread, call(Runner, mpd_server(Port, [allow(local)])).
+main(ArgV) :- 
+   argv_options(ArgV, [StateFile], Options),
+   cli_parse_debug_options(Options, Options1),
+   option(port(Port), Options1, 6601),
+   attach(StateFile), mpd_init, 
+   setup_call_cleanup(start_gst_thread, 
+                      telnet_server(mpd_interactor, Port, [allow(local)]),
+                      kill_satellites).
 
-:- (flag(swimpd_load_count, 0, 1) -> current_prolog_flag(argv, ArgV), main(ArgV); true).
 % vim: ft=prolog
