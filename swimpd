@@ -1,4 +1,4 @@
-#!/usr/bin/env -S swipl -O -f none -g sync(main) -t halt
+#!/usr/bin/env -S swipl -O -f none -g swimpd(sync) -t halt
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
 
@@ -16,15 +16,15 @@ user:file_search_path(bbc, 'prolog').
 :- use_module(prolog/swimpd/state,    [attach/1]).
 :- use_module(prolog/swimpd/tools,    [thread/2]).
 
-async(G) :- thread_create(G, _, [detached(true), alias(mpd_server)]).
-sync(G) :- on_signal(int, _, kill_server), on_signal(hup, _, kill_server), call(G), writeln('FINISHED').
+swimpd(async) :- thread_create(main, _, [detached(true), alias(mpd_server)]).
+swimpd(sync)  :- on_signal(int, _, kill_server), main.
+
 kill_server(Signal) :- 
    debug(swimpd(swimpd,s(s(0))), 'Killing swimpd server on signal ~w', [Signal]), 
    throw(shutdown).
 kill_satellites :-
    forall(thread(client, Id), thread_signal(Id, throw(hangup))),
    thread_signal(gst_slave, throw(shutdown)).
-
 
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
