@@ -131,6 +131,7 @@ command(findadd,  find_args(Filters)) :-> {db_find(true, Filters, Files), add_mu
 command(searchadd,find_args(Filters)) :-> {db_find(false, Filters, Files), add_multi(Files)}.
 command(count,    find_args(Filters)) :-> db_count(Filters). % group not supported
 command(ping,     []) :-> [].
+command(make,     []) :-> {make}.
 
 command(albumart,    (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(series, Path, URL)}.
 command(readpicture, (a(path(Path)), a(nat(Offset))), swimpd:reply_url_bin(URL, Offset)) :-> {db_image(episode, Path, URL)}.
