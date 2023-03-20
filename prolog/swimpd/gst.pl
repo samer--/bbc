@@ -1,5 +1,5 @@
 :- module(gst, [start_gst_thread/0, gst_audio_info/2, enact_player_change/3, set_volume/1]).
-% TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
+% TODO: audio and video sink control. Fix protocol. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, set/3, (//)//2]).
@@ -7,19 +7,22 @@
 :- use_module(library(data/pair), [ffst/3]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_states/2, vstate/2, set_vstate/2, rm_vstate/1]).
-:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
+:- use_module(tools,  [parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
 start_gst_thread :- thread_create(gst_thread, _, [alias(gst_slave), detached(true)]).
 gst_thread :- catch(forever(gst_peer), shutdown, true), debug(swimpd(gst,s(s(0))), 'GStreamer thread shutting down.', []).
+forever(P) :- call(P), debug(swimpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
+
 gst_peer :-
    setup_call_cleanup(start_gst(PID, IO),
                       catch(gst_reader_thread(PID-IO), Ex, (process_kill(PID), throw(Ex))),
                       process_wait(PID, _Status)).
 
 start_gst(PID,In-Out) :-
-   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]).
+   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
+   debug(swimpd(gst, s(s(0))), 'Started gstreamer slave process on PID ~w.', [PID]).
 
 gst_reader_thread(_-(In-Out)) :-
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
