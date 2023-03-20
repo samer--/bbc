@@ -20,7 +20,9 @@ socket_server(P, Socket, Port, Allow) :-
    tcp_setopt(Socket, reuseaddr),
    tcp_bind(Socket, Port),
    tcp_listen(Socket, 5),
-   server_loop(P, Socket, Allow).
+   debug(swimpd(telnet, s(s(0))), 'Telnet server running on port ~w', [Port]),
+   catch(server_loop(P, Socket, Allow), shutdown,
+         debug(swimpd(telnet, s(s(0))), 'Shutting down telnet server on port ~w', [Port])).
 
 server_loop(P, Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),

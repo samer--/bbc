@@ -11,6 +11,8 @@
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
+start_gst_thread :- thread_create(gst_thread, _, [alias(gst_slave), detached(true)]).
+gst_thread :- catch(forever(gst_peer), shutdown, true), debug(swimpd(gst,s(s(0))), 'GStreamer thread shutting down.', []).
 gst_peer :-
    setup_call_cleanup(start_gst(PID, IO),
                       catch(gst_reader_thread(PID-IO), Ex, (process_kill(PID), throw(Ex))),
@@ -66,8 +68,6 @@ recv(K, MV) :-
    ( thread_get_message(Id, K-V, [timeout(15)]) -> MV = just(V)
    ; print_message(warning, recv_timeout(K)), MV = nothing
    ).
-
-start_gst_thread :- thread_create(forever(gst_peer), _, [alias(gst_slave), detached(true)]).
 
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
