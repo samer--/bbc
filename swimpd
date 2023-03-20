@@ -7,19 +7,24 @@ user:file_search_path(bbc, 'prolog').
 :- use_module(prolog/swimpd/telnetd,  [telnet_server/3]).
 :- use_module(prolog/swimpd/protocol, [mpd_interactor/0]).
 :- use_module(prolog/swimpd/gst,      [start_gst_thread/0]).
-:- use_module(prolog/swimpd/swimpd,   [mpd_init/0, restore_state/1, save_state/0]).
+:- use_module(prolog/swimpd/state,    [attach/1]).
+:- use_module(prolog/swimpd/swimpd,   [mpd_init/0, restore_state/1, save_state/1]).
 :- use_module(library(fileutils), [with_output_to_file/2]).
 :- use_module(library(rcutils)).
 
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
 
-%! start_mpd(Port, Options) is det.
-%  Start BBC MPD server as a detached thread with alias =|mpd_server|=.
-%  See telnet_server/3 for description of Port and Options parameters.
-start_mpd(Port, Options) :- thread_create(telnet_server(mpd_interactor, Port, Options), _, [detached(true), alias(mpd_server)]).
+:- meta_predicate detached(+,0).
+detached(Alias, Goal) :- thread_create(Goal, _, [detached(true), alias(Alias)]), confirm_on_halt.
+mpd_server(Port, Options) :- telnet_server(mpd_interactor, Port, Options).
 
-start([A1]) :- atom_number(A1, Port), start_mpd(Port, [allow(local)]), start_gst_thread.
-main :- current_prolog_flag(argv, Argv), mpd_init, start(Argv), confirm_on_halt, at_halt(save_state).
-:- (flag(swimpd_load_count, 0, 1) -> main; true).
+runner(interactive, detached(mpd_server)).
+runner(foreground,  call).
+
+main([State, PortAtom, Mode]) :- 
+   atom_number(PortAtom, Port), runner(Mode, Runner), attach(State), mpd_init, 
+   start_gst_thread, call(Runner, mpd_server(Port, [allow(local)])).
+
+:- (flag(swimpd_load_count, 0, 1) -> current_prolog_flag(argv, ArgV), main(ArgV); true).
 % vim: ft=prolog

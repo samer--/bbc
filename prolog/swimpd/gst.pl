@@ -2,12 +2,12 @@
 % TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
-:- use_module(library(dcg_core), [seqmap_with_sep//3, (//)//2]).
+:- use_module(library(dcg_core), [seqmap_with_sep//3, set/3, (//)//2]).
 :- use_module(library(dcg_codes), [fmt//2]).
+:- use_module(library(data/pair), [ffst/3]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
-:- use_module(state, [state/2, set_state/2, rm_state/1]).
-:- use_module(protocol, [notify_all/1]).
-:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, maybe/2, registered/2, setup_stream/2, thread/2]).
+:- use_module(state, [state/2, set_states/2, vstate/2, set_vstate/2, rm_vstate/1]).
+:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
@@ -23,7 +23,12 @@ gst_reader_thread(_-(In-Out)) :-
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
    registered(gst(In), gst_reader(Out)).
 
-gst_reader(Self, Out) :- state(volume, V), set_volume(V), gst_read_next(Self, Out).
+gst_reader(Out) :-
+   maplist(state, [volume, player, queue], [V, Player, _-Songs]),
+   set_volume(V), enact_player_change([]-Songs, nothing, Player),
+   thread_self(Self), gst_read_next(Self, Out).
+
+% pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
 gst_handle(end_of_file, _, _) :- !, debug(gst, 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
@@ -47,7 +52,7 @@ gst_message(format,   [],           [format-just(Rate:Fmt:Ch)]) -->
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
-set_global(K-V) :- set_state(K, V). %, notify_all([player]). % Upsets MPD Droid
+set_global(K-V) :- set_vstate(K, V). %, notify_all([player]). % Upsets MPD Droid
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 
@@ -69,7 +74,7 @@ broken(Cs, P) --> break(Cs) // P.
 
 gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
    send("position"), recv(position, just(Elap)),
-   maplist(state, [bitrate, format, duration], [BR, Fmt, Dur]).
+   maplist(vstate, [bitrate, format, duration], [BR, Fmt, Dur]).
 
 enact_player_change(_, nothing, nothing).
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
@@ -88,14 +93,14 @@ enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
 enact_slave_change(_,          nothing, nothing) :- !.
 enact_slave_change(SongsPos-_, just(S), nothing) :- !, stop_if_playing(SongsPos, S).
 enact_slave_change(_-SongsPos, nothing, just(S-Au)) :- !, cue_and_maybe_play(SongsPos, S-Au).
-enact_slave_change(_,          just(S1-_), just(S2-_)) :-
-   (  S1-S2 = play-pause -> send("pause")
+enact_slave_change(_-SongsPos, just(S1-_), just(S2-_)) :-
+   (  S1-S2 = play-pause -> send("pause"), save_position(SongsPos)
    ;  S1-S2 = pause-play -> send("play")
    ;  true
    ).
 stop_if_playing(SongsPos, _) :-
    save_position(SongsPos), send("stop"),
-   maplist(rm_state, [bitrate, format, duration]).
+   maplist(rm_vstate, [bitrate, format, duration]).
 cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    nth0(Pos, Songs, song(_, GetURL, _)), call(GetURL, URL),
    maplist(set_global, [bitrate-nothing, format-nothing, duration-Dur]),
@@ -112,10 +117,10 @@ save_position(Songs-Pos) :-
 
 adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted is Dur - 10.
 save_position(Id, PPos) :-
-   state(duration, Dur),
+   vstate(duration, Dur),
    adjust_position(Dur, PPos, Adjusted),
    debug(gst, 'Saving position at ~w / ~w', [Adjusted, Dur]),
-   set_state(position(Id), Adjusted).
+   set_states(position(Id), Adjusted).
 
 restore_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
