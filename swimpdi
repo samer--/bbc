@@ -1,2 +1,2 @@
 #!/bin/sh
-exec swipl -g 'confirm_on_halt,swimpd(async),version' swimpd "$@"
+cd $(dirname $0) && exec swipl -g 'confirm_on_halt,swimpd(async),version' swimpd "$@"

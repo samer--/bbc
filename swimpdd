@@ -1,2 +1,2 @@
 #!/bin/sh
-exec swipl -O -f none -g 'writeln("<<< SWIMPD >>>")' -t 'swimpd(sync)' swimpd "$@"
+cd $(dirname $0) && exec swipl -f none -g true -t 'swimpd(sync)' swimpd "$@"
