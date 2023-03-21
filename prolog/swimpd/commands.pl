@@ -21,6 +21,9 @@
                          registered/2, spawn/1, setup_stream/2]).
 
 /* <module> MPD server for BBC radio programmes.
+   This modules provides the following things:
+   1. Clauses of mpd_protocol:command/{2,3} to implement MPD commands
+   2. Some state management tools
 
    @todo
    Core
@@ -166,7 +169,7 @@ stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), vstate(dbtime, D), round(D
 update_db(Path) --> {flag(update, JOB, JOB+1), spawn(update_db_and_notify(Path))}, report(updating_db-JOB). % FIXME: put JOB in state
 update_db_and_notify(Path) :- db_update(Path), get_time(Now), set_vstate(dbtime, Now), notify_all([database]).
 
-enact(volume, [], _, _) :- !, debug(mpd(swimpd,s(s(s(0)))), "UNEXPECTED ENACT VOLUME CLAUSE", []).
+enact(volume, [], _, _) :- !, debug(mpd(commands,s(s(s(0)))), "UNEXPECTED ENACT VOLUME CLAUSE", []).
 enact(volume, [mixer], _, V) :- !, set_volume(V).
 enact(single, _, _, _).
 enact(consume, _, _, _).
