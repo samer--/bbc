@@ -1,1 +1,2 @@
-swipl -g confirm_on_halt -g 'swimpd(async)' -g version swimpd "$@"
+#!/bin/sh
+exec swipl -g 'confirm_on_halt,swimpd(async),version' swimpd "$@"

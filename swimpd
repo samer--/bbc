@@ -1,11 +1,14 @@
-#!/usr/bin/env -S swipl -O -f none -g swimpd(sync) -t halt
+#!/usr/bin/env -S swipl -O -f none -g true -t swimpd(sync)
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
 
-:- set_prolog_flag(optimise_debug, false).
-:- set_prolog_flag(message_context, [time, thread]).
+:- if(current_prolog_flag(version_data, swi(7,_,_,_))).
+:-   maplist(debug_message_context, [+time, +thread]).
+:- else.
+:-   set_prolog_flag(optimise_debug, false).
+:-   set_prolog_flag(message_context, [time, thread]).
+:- endif.
 
-:- use_module(library(main)).
 :- use_module(library(apply_macros)).
 :- use_module(library(dcg_macros)). % NB. import into user means these apply globally
 
@@ -29,17 +32,10 @@ kill_satellites :-
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
 
-opt_type(p, port, integer).
-opt_type(debug, debug, atom).
-
-opt_help(port, 'Port number on which MPD service is provided').
-opt_help(debug, 'Enable debugging messages on this topic').
-
-main(ArgV) :- 
-   argv_options(ArgV, [StateFile], Options),
-   cli_parse_debug_options(Options, Options1),
-   option(port(Port), Options1, 6601),
-   attach(StateFile), mpd_init, 
+main :-
+   current_prolog_flag(argv, [PortAtom, StateFile | DebugTopics]),
+   forall(member(A, DebugTopics), (atom_to_term(A,T,[]), debug(T))),
+   atom_number(PortAtom, Port), attach(StateFile), mpd_init, 
    setup_call_cleanup(start_gst_thread, 
                       telnet_server(mpd_interactor, Port, [allow(local)]),
                       kill_satellites).

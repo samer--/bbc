@@ -1,0 +1,2 @@
+#!/bin/sh
+exec swipl -O -f none -g 'writeln("<<< SWIMPD >>>")' -t 'swimpd(sync)' swimpd "$@"
