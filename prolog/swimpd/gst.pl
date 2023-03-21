@@ -11,7 +11,7 @@
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
-start_gst_thread :- thread_create(gst_thread, _, [alias(gst_slave), detached(true)]).
+start_gst_thread :- thread_create(gst_thread, _, [alias(gst_slave), detached(false)]).
 gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'GStreamer thread shutting down.', []).
 forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
 

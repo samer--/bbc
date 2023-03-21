@@ -14,7 +14,7 @@ user:file_search_path(bbc, 'prolog').
 :- use_module(prolog/swimpd/tools,    [thread/2]).
 
 swimpd(async) :- thread_create(main, _, [detached(true), alias(mpd_server)]).
-swimpd(sync)  :- on_signal(int, _, kill_server), main.
+swimpd(sync)  :- on_signal(term, _, kill_server), main.
 
 kill_server(Signal) :-
    debug(mpd(swimpd,s(s(0))), 'Killing swimpd server on signal ~w', [Signal]),
@@ -22,7 +22,8 @@ kill_server(Signal) :-
 
 kill_satellites :-
    forall(thread(client, Id), thread_signal(Id, throw(hangup))),
-   thread_signal(gst_slave, throw(shutdown)).
+   thread_signal(gst_slave, throw(shutdown)),
+   thread_join(gst_slave).
 
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
@@ -31,6 +32,7 @@ main :-
    writeln("<<< Starting SWIMPD - BBC Music Player Daemon >>>"),
    current_prolog_flag(argv, [PortAtom, StateFile | DebugTopics]),
    forall(member(A, DebugTopics), (atom_to_term(A,T,[]), debug(T))),
+   forall(debugging(T), format('Debugging topic: ~w\n', [T])),
    atom_number(PortAtom, Port), attach(StateFile), mpd_init,
    setup_call_cleanup(start_gst_thread,
                       telnet_server(mpd_interactor, Port, [allow(local)]),
