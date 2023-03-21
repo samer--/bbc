@@ -23,7 +23,7 @@ kill_server(Signal) :-
 kill_satellites :-
    forall(thread(client, Id), thread_signal(Id, throw(hangup))),
    thread_signal(gst_slave, throw(shutdown)),
-   thread_join(gst_slave).
+   thread_join(gst_slave, _).
 
 local(ip(127,0,0,1)).
 local(ip(192,168,1,_)).
