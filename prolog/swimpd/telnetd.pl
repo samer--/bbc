@@ -20,22 +20,22 @@ socket_server(P, Socket, Port, Allow) :-
    tcp_setopt(Socket, reuseaddr),
    tcp_bind(Socket, Port),
    tcp_listen(Socket, 5),
-   debug(swimpd(telnet, s(s(0))), 'Telnet server running on port ~w', [Port]),
+   debug(mpd(telnet, s(s(0))), 'Telnet server running on port ~w', [Port]),
    catch(server_loop(P, Socket, Allow), shutdown,
-         debug(swimpd(telnet, s(s(0))), 'Shutting down telnet server on port ~w', [Port])).
+         debug(mpd(telnet, s(s(0))), 'Shutting down telnet server on port ~w', [Port])).
 
 server_loop(P, Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),
-   debug(swimpd(telnet, s(0)), "new connection from ~w", [Peer]),
+   debug(mpd(telnet, s(0)), "new connection from ~w", [Peer]),
    tcp_open_socket(Slave, IO),
    thread_create(client(P, IO, Peer, Allow), _, [at_exit(close_peer(Peer, IO)), detached(true)]),
    server_loop(P, Socket, Allow).
 
-close_peer(Peer, IO) :- debug(swimpd(telnet, s(0)), 'Closing connection from ~w', [Peer]), close(IO).
+close_peer(Peer, IO) :- debug(mpd(telnet, s(0)), 'Closing connection from ~w', [Peer]), close(IO).
 client(P, IO, Peer, Allow) :- call(Allow, Peer), !, service_client(P, IO).
 client(_, IO, _, _) :- format(IO, 'Access denied.~n', []).
 
 service_client(P, IO) :-
-   thread_self(Self), debug(swimpd(telnet, s(0)), 'Servicing telnet client on thread ~w', [Self]),
+   thread_self(Self), debug(mpd(telnet, s(0)), 'Servicing telnet client on thread ~w', [Self]),
    maplist(set_stream(IO), [close_on_abort(false), encoding(utf8), newline(posix), buffer(full)]),
    stream_pair(IO, In, Out), set_input(In), set_output(Out), call(P).
