@@ -1,0 +1,12 @@
+[Unit]
+Description=BBC Music Player Daemon service
+After=network.target sound.target
+
+[Service]
+User=samer
+Type=simple
+StandardOutput=journal
+ExecStart=/home/samer/src/git/bbc/swimpd 6601 /home/samer/var/swimpd/state.db 'mpd(_,s(s(_)))'
+
+[Install]
+WantedBy=multi-user.target

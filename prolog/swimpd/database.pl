@@ -11,7 +11,7 @@
 :- use_module(library(dcg_core),  [maybe/3]).
 :- use_module(library(listutils), [enumerate/2]).
 :- use_module(state,  [state/2, vstate/2, set_vstate/2]).
-:- use_module(tools,  [report//1, report//2, maybe/2, maybe//2, spawn/1]).
+:- use_module(tools,  [report//1, report//2, maybe/2, maybe//2]).
 :- use_module(bbc(bbc_tools), [sort_by/3, log_and_succeed/1]).
 :- use_module(bbc(bbc_db), [service/1, service/2, fetch_new_schedule/1, service_live_url/2, pid_entry/3, pid_tracks/2,
                             service_entry/2, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3,

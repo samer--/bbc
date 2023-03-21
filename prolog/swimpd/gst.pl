@@ -1,5 +1,5 @@
 :- module(gst, [start_gst_thread/0, gst_audio_info/2, enact_player_change/3, set_volume/1]).
-% TODO: audio and video sink control. Fix protocol. Restore URI and maybe play state on restart. Handle timeout better.
+% TODO: audio and video sink control. Fix protocol. Handle timeout better.
 
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, set/3, (//)//2]).
@@ -7,9 +7,13 @@
 :- use_module(library(data/pair), [ffst/3]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_states/2, vstate/2, set_vstate/2, rm_vstate/1]).
-:- use_module(tools,  [forever/1, parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
+:- use_module(tools,  [parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
+
+start_gst_thread :- thread_create(gst_thread, _, [alias(gst_slave), detached(false)]).
+gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'GStreamer thread shutting down.', []).
+forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
 
 gst_peer :-
    setup_call_cleanup(start_gst(PID, IO),
@@ -17,7 +21,8 @@ gst_peer :-
                       process_wait(PID, _Status)).
 
 start_gst(PID,In-Out) :-
-   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]).
+   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
+   debug(mpd(gst, s(s(0))), 'Started gstreamer slave process on PID ~w.', [PID]).
 
 gst_reader_thread(_-(In-Out)) :-
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
@@ -30,9 +35,9 @@ gst_reader(Out) :-
 
 % pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
 gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Self, Out).
-gst_handle(end_of_file, _, _) :- !, debug(gst, 'End of stream from gst', []).
+gst_handle(end_of_file, _, _) :- !, debug(mpd(gst, s(s(0))), 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
-   debug(gst, '~~> ~s', [Codes]),
+   debug(mpd(gst, 0), '<~~ ~s', [Codes]),
    insist(phrase(parse_head(Head, Tail), Codes)),
    (  phrase(gst_message(Head, Msgs, Globals), Tail)
    -> maplist(thread_send_message(Self), Msgs),
@@ -58,7 +63,7 @@ gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 
 send(P) :-
    thread(gst(In), _), phrase(P, Codes),
-   debug(gst, '<~~ ~s', [Codes]),
+   debug(mpd(gst,0), '~~> ~s', [Codes]),
    format(In, "~s\n", [Codes]).
 
 recv(K, MV) :-
@@ -66,8 +71,6 @@ recv(K, MV) :-
    ( thread_get_message(Id, K-V, [timeout(15)]) -> MV = just(V)
    ; print_message(warning, recv_timeout(K)), MV = nothing
    ).
-
-start_gst_thread :- thread_create(forever(gst_peer), _, [alias(gst_slave), detached(true)]).
 
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
@@ -119,7 +122,7 @@ adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted 
 save_position(Id, PPos) :-
    vstate(duration, Dur),
    adjust_position(Dur, PPos, Adjusted),
-   debug(gst, 'Saving position at ~w / ~w', [Adjusted, Dur]),
+   debug(mpd(gst,s(s(0))), 'Saving position at ~w / ~w', [Adjusted, Dur]),
    set_states(position(Id), Adjusted).
 
 restore_position(Songs-Pos) :-

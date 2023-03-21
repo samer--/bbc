@@ -15,7 +15,7 @@ states(K1-K2, V1-V2) :- !, states(K1,V1), states(K2,V2).
 states(K,V)          :- state(K,V).
 
 set_states(K1-K2, V1-V2) :- set_states(K1,V1), set_states(K2,V2).
-set_states(K,V)          :- debug(state, "Setting state ~w to ~w", [K,V]), retractall_state(K, _), assert_state(K, V).
+set_states(K,V)          :- debug(mpd(state, 0), "state ~w set to ~w", [K,V]), retractall_state(K, _), assert_state(K, V).
 
 % volatile state
 set_vstate(Key, Val) :- retractall(vstate(Key, _)), assert(vstate(Key, Val)).
