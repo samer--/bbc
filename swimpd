@@ -1,4 +1,3 @@
-#!/usr/bin/env -S swipl -O -f none -g true -t swimpd(sync)
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
 
