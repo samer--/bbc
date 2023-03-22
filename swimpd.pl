@@ -10,7 +10,7 @@ user:file_search_path(bbc, 'prolog').
 :- use_module(prolog/swimpd/protocol, [mpd_interactor/0]).
 :- use_module(prolog/swimpd/gst,      [start_gst_thread/0]).
 :- use_module(prolog/swimpd/commands, [mpd_init/0, restore_state/1, save_state/1]).
-:- use_module(prolog/swimpd/state,    [attach/1]).
+:- use_module(prolog/swimpd/state,    [attach/1, sync_state/0]).
 :- use_module(prolog/swimpd/tools,    [thread/2]).
 
 swimpd(async) :- thread_create(main, _, [detached(true), alias(mpd_server)]).
@@ -33,7 +33,7 @@ main :-
    current_prolog_flag(argv, [PortAtom, StateFile | DebugTopics]),
    forall(member(A, DebugTopics), (atom_to_term(A,T,[]), debug(T))),
    forall(debugging(T), format('Debugging topic: ~w\n', [T])),
-   atom_number(PortAtom, Port), attach(StateFile), mpd_init,
+   atom_number(PortAtom, Port), attach(StateFile), sync_state, mpd_init,
    setup_call_cleanup(start_gst_thread,
                       telnet_server(mpd_interactor, Port, [allow(local)]),
                       kill_satellites).

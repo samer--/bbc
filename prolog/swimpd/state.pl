@@ -1,5 +1,5 @@
 :- module(mpd_state, [excl/1, attach/1, init_state/2, upd_states/2, set_states/2, state/2, states/2,
-                      set_vstate/2, rm_vstate/1, vstate/2,  version_queue/2, add_queue/2]).
+                      set_vstate/2, rm_vstate/1, vstate/2,  version_queue/2, add_queue/2, sync_state/0]).
 :- use_module(library(persistency)).
 
 :- persistent state(term, term).
@@ -22,3 +22,7 @@ set_vstate(Key, Val) :- retractall(vstate(Key, _)), assert(vstate(Key, Val)).
 rm_vstate(Key)       :- retractall(vstate(Key, _)).
 
 add_queue(Version, Songs)  :- assert(version_queue(Version, Songs)).
+
+sync_state :-
+   db_sync(W), alarm(3600, sync_state, _, [remove(true)]),
+   debug(mpd(state,s(s(0))), 'Synchronised state db (~w)', [W]).
