@@ -11,8 +11,9 @@
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
-start_gst_thread :- thread_create(gst_thread, _, [alias(gst_slave), detached(false)]).
-gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'GStreamer thread shutting down.', []).
+start_gst_thread :- thread_create(gst_thread, _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
+gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []).
+gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'gst_thread clean shutdown.', []).
 forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
 
 gst_peer :-
@@ -28,6 +29,7 @@ gst_reader_thread(_-(In-Out)) :-
    maplist(setup_stream([close_on_abort(false), buffer(line)]), [In, Out]),
    registered(gst(In), gst_reader(Out)).
 
+:- det(gst_reader/1).
 gst_reader(Out) :-
    maplist(state, [volume, player, queue], [V, Player, _-Songs]),
    set_volume(V), enact_player_change([]-Songs, nothing, Player),
@@ -79,10 +81,10 @@ gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
    send("position"), recv(position, just(Elap)),
    maplist(vstate, [bitrate, format, duration], [BR, Fmt, Dur]).
 
-enact_player_change(_, nothing, nothing).
-enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- maybe(stop_if_playing(Songs-Pos), Slave).
-enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- maybe(cue_and_maybe_play(Songs-Pos), Slave).
-enact_player_change(SongsPair, just(PS1), just(PS2)) :- enact_ps_change(SongsPair, PS1, PS2).
+enact_player_change(_, nothing, nothing) :- !.
+enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- !, maybe(stop_if_playing(Songs-Pos), Slave).
+enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- !, maybe(cue_and_maybe_play(Songs-Pos), Slave).
+enact_player_change(SongsPair, just(PS1), just(PS2)) :- !, enact_ps_change(SongsPair, PS1, PS2).
 
 enact_ps_change(Songs1-Songs2, ps(Pos1, Sl1), ps(Pos2, Sl2)) :-
    nth0(Pos1, Songs1, song(Id1, _, _)),

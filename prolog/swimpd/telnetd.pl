@@ -24,6 +24,7 @@ socket_server(P, Socket, Port, Allow) :-
    catch(server_loop(P, Socket, Allow), shutdown,
          debug(mpd(telnet, s(s(0))), 'Shutting down telnet server on port ~w', [Port])).
 
+:- det(server_loop/3).
 server_loop(P, Socket, Allow) :-
    tcp_accept(Socket, Slave, Peer),
    debug(mpd(telnet, s(0)), "new connection from ~w", [Peer]),
