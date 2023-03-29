@@ -7,7 +7,7 @@ user:file_search_path(bbc, 'prolog').
 :- use_module(library(dcg_macros)). % NB. import into user means these apply globally
 
 :- use_module(prolog/swimpd/telnetd,  [telnet_server/3]).
-:- use_module(prolog/swimpd/protocol, [mpd_interactor/0]).
+:- use_module(prolog/swimpd/protocol, [mpd_interactor/0, execute_string/1]).
 :- use_module(prolog/swimpd/gst,      [start_gst_thread/0]).
 :- use_module(prolog/swimpd/commands, [mpd_init/0, restore_state/1, save_state/1]).
 :- use_module(prolog/swimpd/state,    [attach/1, sync_state/0]).
