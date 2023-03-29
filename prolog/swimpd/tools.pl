@@ -31,10 +31,12 @@ flip(P, X, Y, Z) :- call(P, Y, X, Z).
 *(P) --> []; +(P).
 
 :- meta_predicate fmaybe(2,?,?), fjust(2,?,?), maybe(3,?,?,?), maybe(1,?).
-maybe(_, nothing) --> [].
-maybe(P, just(Y)) --> call(P,Y).
-maybe(_, nothing).
-maybe(P, just(X)) :- call(P, X).
+maybe(P, X) --> maybe_(X, P).
+maybe(P, X) :- maybe_(X, P).
+maybe_(nothing, _) --> [].
+maybe_(just(Y), P) --> call(P, Y).
+maybe_(nothing, _).
+maybe_(just(X), P) :- call(P, X).
 
 fmaybe(_, nothing, nothing).
 fmaybe(P, just(X1), just(X2)) :- call(P, X1, X2).
