@@ -34,7 +34,6 @@ def tracef(info, f, arg):
     print_stderr("==> ENTER %s: %r" % (info, arg));          y=f(arg)
     print_stderr("==>  EXIT %s: %r -> %r" % (info, arg, y)); return y
 
-neq = delay(op.ne)
 pos = bind(op.lt, 0)
 
 class Context(object):
@@ -62,9 +61,9 @@ def print_(s):
     with lock: print s; sys.stdout.flush()
 maybe_fmt_cap = maybe(compose(rpt('format'), fmt_cap))
 
-def changes(state):
-    def set_and_return(x): state[0] = x; return x
-    return lambda x: maybe(set_and_return)(guard(neq(state[0]))(x))
+def changes(state, x):
+    if x == state[0]: return None
+    state[0] = x; return x
 def main():
     p = Gst.ElementFactory.make("playbin", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
@@ -92,6 +91,7 @@ def main():
                   , 'seek':     lambda a: seek(float(a[0]))
                   , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync(), maybe_fmt_cap(get_cap(p)))
                   , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
+                  , '':         lambda _: (print_stderr('quitting'), exit())
                   })
     def handle_messages(bus):
         while True: handle_msg(bus.timed_pop(Gst.CLOCK_TIME_NONE))
@@ -99,6 +99,6 @@ def main():
     t = threading.Thread(target=handle_messages, args=[p.get_bus()])
     t.daemon = True; t.start()
     with Context(lambda: (stop, None)):
-        while True: wrapper[0](player)(decons(guard(neq(''))(sys.stdin.readline().rstrip()).split(' ', 1)))
+        while True: wrapper[0](player)(decons(sys.stdin.readline().rstrip().split(' ', 1)))
 
 if __name__ == '__main__': main()
