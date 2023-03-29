@@ -30,9 +30,7 @@ def swap((x,y)): return y, x
 def col(brightness, name): return '\033[%dm' % ([30, 90][brightness] + _colours[name])
 _colours = dict(map(swap, enumerate(['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'])))
 @delay
-def tracef(info, f, arg):
-    print_stderr("==> ENTER %s: %r" % (info, arg));          y=f(arg)
-    print_stderr("==>  EXIT %s: %r -> %r" % (info, arg, y)); return y
+def tracef(info, f, arg): print_stderr("==> %s: %r" % (info, arg)); return f(arg)
 
 pos = bind(op.lt, 0)
 
