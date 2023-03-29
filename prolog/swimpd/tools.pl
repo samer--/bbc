@@ -15,7 +15,7 @@ registered(N, G) :- thread_self(Id), setup_call_cleanup(register(N, Id), G, unre
 register(N, Id) :- debug(mpd(tools, s(0)), 'Registering thread ~w as ~w', [Id, N]), assert(thread(N, Id)).
 unregister(N, Id) :- debug(mpd(tools, s(0)), 'Unregistering thread ~w as ~w', [Id, N]), retract(thread(N, Id)).
 
-parse_head(Head, Tail) --> break(` `) // list(H), list(Tail), {atom_codes(Head, H)}.
+parse_head(Head, Tail) --> break(` `) // list(H), {atom_codes(Head, H)}, list(Tail).
 
 report(Name-Value) --> report(Name, Value).
 report(Name, Value) --> fmt('~w: ~w\n', [Name, Value]).
