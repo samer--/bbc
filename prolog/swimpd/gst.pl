@@ -40,11 +40,11 @@ gst_read_next(Self, Out) :- read_line_to_codes(Out, Codes), gst_handle(Codes, Se
 gst_handle(end_of_file, _, _) :- !, debug(mpd(gst, s(s(0))), 'End of stream from gst', []).
 gst_handle(Codes, Self, Out) :-
    debug(mpd(gst, 0), '<~~ ~s', [Codes]),
-   insist(phrase(parse_head(Head, Tail), Codes)),
+   insist(parse_head(Head, Tail, Codes, [])),
    (  phrase(gst_message(Head, Msgs, Globals), Tail)
    -> maplist(thread_send_message(Self), Msgs),
       maplist(set_global, Globals)
-   ;  true
+   ;  debug(mpd(gst, 0), 'Ignoring message from gst12: ~w ~w', [Head, Tail])
    ),
    gst_read_next(Self, Out).
 
