@@ -81,6 +81,7 @@ gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
    send("position"), recv(position, just(Elap)),
    maplist(vstate, [bitrate, format, duration], [BR, Fmt, Dur]).
 
+:- det(enact_player_change/3).
 enact_player_change(_, nothing, nothing) :- !.
 enact_player_change(Songs-_, just(ps(Pos, Slave)), nothing) :- !, maybe(stop_if_playing(Songs-Pos), Slave).
 enact_player_change(_-Songs, nothing, just(ps(Pos, Slave))) :- !, maybe(cue_and_maybe_play(Songs-Pos), Slave).
@@ -107,7 +108,7 @@ stop_if_playing(SongsPos, _) :-
    save_position(SongsPos), send("stop"),
    maplist(rm_vstate, [bitrate, format, duration]).
 cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
-   nth0(Pos, Songs, song(_, GetURL, _)), call(GetURL, URL),
+   nth0(Pos, Songs, song(_, GetURL, _)), once(call(GetURL, URL)),
    maplist(set_global, [bitrate-nothing, format-nothing, duration-Dur]),
    send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
