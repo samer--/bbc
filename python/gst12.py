@@ -65,8 +65,8 @@ def changes(state, x):
 def main():
     p = Gst.ElementFactory.make("playbin", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
-    durations = changes([0.0])
-    wrapper = [identity] # MUTABLE list
+    durations = bind(changes, [0.0])
+    wrapper = [identity] # MUTABLE cell . alternatively: [bind(tracef, 'player')]
 
     events = def_consult(const(None),
                    { MT.EOS:          compose(print_, const('eos'))
@@ -85,6 +85,7 @@ def main():
                   , 'play':     lambda _: play()
                   , 'volume':   lambda a: p.set_property('volume', float(a[0]))
                   , 'position': lambda _: rpt('position')(position())
+                  , 'id_pos':   lambda a: rpt('id_pos')('%s:%s' % (a[0], position()))
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
                   , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync(), maybe_fmt_cap(get_cap(p)))
