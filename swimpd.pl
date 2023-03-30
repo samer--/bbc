@@ -32,7 +32,6 @@ main :-
    writeln("<<< Starting SWIMPD - BBC Music Player Daemon >>>"),
    current_prolog_flag(argv, [PortAtom, StateFile | DebugTopics]),
    forall(member(A, DebugTopics), (atom_to_term(A,T,[]), debug(T))),
-   forall(debugging(T), format('Debugging topic: ~w\n', [T])),
    atom_number(PortAtom, Port), attach(StateFile), sync_state, mpd_init,
    setup_call_cleanup(start_gst_thread,
                       telnet_server(mpd_interactor, Port, [allow(local)]),
