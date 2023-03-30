@@ -13,7 +13,7 @@
 
 debugging(P) :- catch(P, Error, (print_message(error, Error), throw(Error))).
 start_gst_thread :- thread_create(debugging(gst_thread), _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
-gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []).
+gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []). % FIXME: should notify master thread
 gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'gst_thread clean shutdown.', []).
 forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
 
