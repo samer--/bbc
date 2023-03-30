@@ -1,6 +1,10 @@
 user:file_search_path(python, 'python').
 user:file_search_path(bbc, 'prolog').
 
+:- if(\+current_predicate(det/1)).
+user:det(_).
+:- endif.
+
 :- set_prolog_flag(optimise_debug, false). % only works on SWI 8 and above
 
 :- use_module(library(apply_macros)).
