@@ -47,7 +47,7 @@ gst_handle(Codes, Self, Out) :-
    ),
    gst_read_next(Self, Out).
 
-%           +cmd head -msgs out     -globals to set
+%           +cmd head -globals to set
 gst_message(eos,      []) --> {notify_eos}.
 gst_message(bitrate,  [bitrate-just(BR)]) --> " ", num(BR).
 gst_message(duration, [duration-D]) --> " ", num(D).
