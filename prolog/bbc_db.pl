@@ -35,7 +35,7 @@ uget(Head, Result) :-
    call(Head, Fmt, Pattern-Args),
    format(string(URL), Pattern, Args),
    debug(mpd(bbc, s(s(0))), "Getting as ~w: ~w", [Fmt, URL]),
-   get_as(Fmt, URL, R), R=Result. % some getters apparently not steadfast.
+   get_as(Fmt, URL, Result).
 
 % --- service database
 service(S) :- service(S, _, _).

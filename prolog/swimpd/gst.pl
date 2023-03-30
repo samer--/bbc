@@ -6,13 +6,14 @@
 :- use_module(library(dcg_codes), [fmt//2]).
 :- use_module(library(data/pair), [ffst/3]).
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
-:- use_module(state, [state/2, set_states/2, vstate/2, set_vstate/2, rm_vstate/1]).
-:- use_module(tools,  [parse_head//2, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
+:- use_module(state, [state/2, set_states/2, vstate/2, set_vstate/2]).
+:- use_module(tools,  [parse_head//2, atom//1, num//1, nat//1, fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
-start_gst_thread :- thread_create(gst_thread, _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
-gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []).
+debugging(P) :- catch(P, Error, (print_message(error, Error), throw(Error))).
+start_gst_thread :- thread_create(debugging(gst_thread), _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
+gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []). % FIXME: should notify master thread
 gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'gst_thread clean shutdown.', []).
 forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
 
@@ -41,19 +42,20 @@ gst_handle(end_of_file, _, _) :- !, debug(mpd(gst, s(s(0))), 'End of stream from
 gst_handle(Codes, Self, Out) :-
    debug(mpd(gst, 0), '<~~ ~s', [Codes]),
    insist(parse_head(Head, Tail, Codes, [])),
-   (  phrase(gst_message(Head, Msgs, Globals), Tail)
-   -> maplist(thread_send_message(Self), Msgs),
-      maplist(set_global, Globals)
-   ;  debug(mpd(gst, 0), 'Ignoring message from gst12: ~w ~w', [Head, Tail])
+   (  phrase(gst_message(Head, Globals), Tail) -> maplist(set_global, Globals)
+   ;  debug(mpd(gst, 0), 'Ignoring message from gst12: ~w~s', [Head, Tail])
    ),
    gst_read_next(Self, Out).
 
-%           +cmd head -msgs out     -globals to set
-gst_message(eos,      [],           []) --> {notify_eos}.
-gst_message(position, [position-X], []) --> " ", num(X).
-gst_message(bitrate,  [],           [bitrate-just(BR)]) --> " ", num(BR).
-gst_message(duration, [],           [duration-D]) --> " ", num(D).
-gst_message(format,   [],           [format-just(Rate:Fmt:Ch)]) -->
+%           +cmd head -globals to set
+gst_message(eos,      []) --> {notify_eos}.
+gst_message(bitrate,  [bitrate-just(BR)]) --> " ", num(BR).
+gst_message(duration, [duration-D]) --> " ", num(D).
+gst_message(position, []) -->
+   " ", broken([], num(X)), {thread_self(Self), thread_send_message(Self, position(X))}.
+gst_message(id_pos,   []) -->
+   " ", split_on_colon([atom(Id), num(Pos)]), {save_position(Id, Pos)}.
+gst_message(format,   [format-just(Rate:Fmt:Ch)]) -->
    " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 
 sample_fmt(f) --> "F", !, arb.
@@ -68,17 +70,17 @@ send(P) :-
    debug(mpd(gst,0), '~~> ~s', [Codes]),
    format(In, "~s\n", [Codes]).
 
-recv(K, MV) :-
+recv_position(Pos) :-
    thread(gst(_), Id),
-   ( thread_get_message(Id, K-V, [timeout(15)]) -> MV = just(V)
-   ; print_message(warning, recv_timeout(K)), MV = nothing
+   (  thread_get_message(Id, position(Pos), [timeout(15)]) -> true
+   ;  print_message(warning, recv_timeout(position)), fail
    ).
 
 split_on_colon(Ps) --> seqmap_with_sep(`:`, broken(`:`), Ps).
 broken(Cs, P) --> break(Cs) // P.
 
 gst_audio_info(_, au(Dur, Elap, BR, Fmt)) :-
-   send("position"), recv(position, just(Elap)),
+   send("position"), recv_position(Elap),
    maplist(vstate, [bitrate, format, duration], [BR, Fmt, Dur]).
 
 :- det(enact_player_change/3).
@@ -104,9 +106,7 @@ enact_slave_change(_-SongsPos, just(S1-_), just(S2-_)) :-
    ;  S1-S2 = pause-play -> send("play")
    ;  true
    ).
-stop_if_playing(SongsPos, _) :-
-   save_position(SongsPos), send("stop"),
-   maplist(rm_vstate, [bitrate, format, duration]).
+stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("stop").
 cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    nth0(Pos, Songs, song(_, GetURL, _)), once(call(GetURL, URL)),
    maplist(set_global, [bitrate-nothing, format-nothing, duration-Dur]),
@@ -116,10 +116,7 @@ cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
 
 save_position(Songs-Pos) :-
    nth0(Pos, Songs, song(Id, _, _)),
-   (  id_wants_bookmark(Id)
-   -> send("position"), recv(position, PPos), maybe(save_position(Id), PPos)
-   ;  true
-   ).
+   (id_wants_bookmark(Id) -> send(fmt('id_pos ~w', [Id]));  true).
 
 adjust_position(Dur, PPos, Adjusted) :- PPos < Dur-5 -> Adjusted=PPos; Adjusted is Dur - 10.
 save_position(Id, PPos) :-

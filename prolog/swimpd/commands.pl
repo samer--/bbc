@@ -251,6 +251,7 @@ upd_pos(next, L, Pos, Pos1) :- succ(Pos, Pos1), length(L, N), Pos1 < N.
 upd_pos(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
 
 % -- next and previous handling --
+% TODO: target the ENDS of tracks, not the starts?
 step_track_or_prog(Dir) -->
    (  current(_, PID), {is_programme(PID), pid_tracks(PID, Tracks)}
    -> {gst_audio_info(_, au(_Dur, Elap, _, _)),
