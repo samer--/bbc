@@ -43,7 +43,7 @@ gst_handle(Codes, Self, Out) :-
    debug(mpd(gst, 0), '<~~ ~s', [Codes]),
    insist(parse_head(Head, Tail, Codes, [])),
    (  phrase(gst_message(Head, Globals), Tail) -> maplist(set_global, Globals)
-   ;  debug(mpd(gst, 0), 'Ignoring message from gst12: ~w ~w', [Head, Tail])
+   ;  debug(mpd(gst, 0), 'Ignoring message from gst12: ~w~s', [Head, Tail])
    ),
    gst_read_next(Self, Out).
 
@@ -52,7 +52,7 @@ gst_message(eos,      []) --> {notify_eos}.
 gst_message(bitrate,  [bitrate-just(BR)]) --> " ", num(BR).
 gst_message(duration, [duration-D]) --> " ", num(D).
 gst_message(position, []) -->
-   " ", num(X). {thread_self(Self), thread_send_message(Self, position(X))}.
+   " ", broken([], num(X)), {thread_self(Self), thread_send_message(Self, position(X))}.
 gst_message(id_pos,   []) -->
    " ", split_on_colon([atom(Id), num(Pos)]), {save_position(Id, Pos)}.
 gst_message(format,   [format-just(Rate:Fmt:Ch)]) -->
