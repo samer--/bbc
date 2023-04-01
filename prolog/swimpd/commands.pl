@@ -262,6 +262,13 @@ step_track_or_prog(Dir) -->
    ;  step(play, Dir)
    ).
 
+%% cursor_at_time(+T:time, +F:list(track), +A:list(Track), -C:cursor(track)) is det.
+%
+%  Builds a track cursor given a time and two time ordered lists of tracks.
+%  The first list of tracks F should be a reversed list of tracks that are
+%  known to be before time T. The second list A should contain the tracks yet to
+%  be processed. F is used in recursive calls; the initial call has F=[].
+%  =|track|= is dictionary type that contains fields '.offset.start' and 'offset.end'.
 cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
    compare(R1, Time, Track.offset.start),
    compare(R2, Time, Track.offset.end),
@@ -272,11 +279,23 @@ cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
 track_in_direction(prev, [T|_], _, T).
 track_in_direction(next, _, [T|_], T).
 
-build_cursor(<, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % T ...  (start, end)
-build_cursor(=, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % (T=start,   end)
-build_cursor(=, =, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (T=start=end)
-build_cursor(>, <, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (start, T, end)
-build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], nothing, Aft)). % (start,  T=end)
+%% build_cursor(+R1:rel, +R2:rel, ?Fore:list(A), ?T:A, ?Aft:list(A), -C:cursor(A)) is semidet.
+%    where    rel ---> (<) | (=) | (>).
+%    and   cursor ---> cursor(list(A), maybe(A), list(A)).
+%
+%  Succeeds when relations R1 and R2 (relations between cursor time and the
+%  start and end respectively of track T) imply that the desired cursor can be built
+%  without any more recursive processing.
+%
+%  Assuming that track T has a time span (t1, t2) and the cursor time is tc, then:
+%    Cursor is placed ON track T when tc is in the open span (t1,t2) OR tc=t1=t2
+%    Cursor is placed BEFORE track T when tc is in the half-open (t2prev, t1]
+%    Cursor is placed AFTER track T when tc=t2, ie at the end of the track.
+build_cursor(<, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % t ...  (start, end)
+build_cursor(=, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % (t=start,  end)
+build_cursor(=, =, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (t=start=end)
+build_cursor(>, <, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (start, t, end)
+build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], nothing, Aft)). % (start, t=end)
 
 % --------------------------------------------------------------
 % play//1, play//2, play//3 - state transformers on list(song) * maybe(player_state)
