@@ -270,10 +270,16 @@ step_track_or_prog(Dir) -->
 %  be processed. F is used in recursive calls; the initial call has F=[].
 %  =|track|= is dictionary type that contains fields '.offset.start' and 'offset.end'.
 cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
-   compare(R1, Time, Track.offset.start),
-   compare(R2, Time, Track.offset.end),
+   tol_compare(R1, Time, Track.offset.start),
+   tol_compare(R2, Time, Track.offset.end),
    ( build_cursor(R1, R2, Fore, Track, Aft, Cursor) -> true
    ; cursor_at_time(Time, [Track | Fore], Aft, Cursor)
+   ).
+
+tol_compare(R, T1, T2) :-
+   ( T1     < T2 -> R = (<)
+   ; T2 + 2 < T1 -> R = (>)
+   ; R = (=)
    ).
 
 track_in_direction(prev, [T|_], _, T).
@@ -292,9 +298,9 @@ track_in_direction(next, _, [T|_], T).
 %    Cursor is placed BEFORE track T when tc is in the half-open (t2prev, t1]
 %    Cursor is placed AFTER track T when tc=t2, ie at the end of the track.
 build_cursor(<, <, Fore, T, Aft, cursor(Fore, [T | Aft])). % t ...  (start, end)
-build_cursor(=, <, Fore, T, Aft, cursor(Fore, [T | Aft])). % (t=start,  end)
+build_cursor(=, <, Fore, T, Aft, cursor(Fore, Aft)).       % (t=start,  end)
 build_cursor(=, =, Fore, T, Aft, cursor(Fore, Aft)).       % (t=start=end)
-build_cursor(>, <, Fore, T, Aft, cursor(Fore, Aft)).       % (start, t, end)
+build_cursor(>, <, Fore, T, Aft, cursor([T | Fore], Aft)). % (start, t, end)
 build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], Aft)). % (start, t=end)
 
 % --------------------------------------------------------------
