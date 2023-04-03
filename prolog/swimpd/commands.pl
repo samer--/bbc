@@ -255,7 +255,7 @@ upd_pos(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
 step_track_or_prog(Dir) -->
    (  current(_, PID), {is_programme(PID), pid_tracks(PID, Tracks)}
    -> {gst_audio_info(_, au(_Dur, Elap, _, _)),
-       cursor_at_time(Elap, [], Tracks, cursor(Fore, _, Aft)),
+       cursor_at_time(Elap, [], Tracks, cursor(Fore, Aft)),
        track_in_direction(Dir, Fore, Aft, Target)
       },
       seekcur(abs(Target.offset.start))
@@ -281,7 +281,7 @@ track_in_direction(next, _, [T|_], T).
 
 %% build_cursor(+R1:rel, +R2:rel, ?Fore:list(A), ?T:A, ?Aft:list(A), -C:cursor(A)) is semidet.
 %    where    rel ---> (<) | (=) | (>).
-%    and   cursor ---> cursor(list(A), maybe(A), list(A)).
+%    and   cursor ---> cursor(list(A), list(A)).
 %
 %  Succeeds when relations R1 and R2 (relations between cursor time and the
 %  start and end respectively of track T) imply that the desired cursor can be built
@@ -291,11 +291,11 @@ track_in_direction(next, _, [T|_], T).
 %    Cursor is placed ON track T when tc is in the open span (t1,t2) OR tc=t1=t2
 %    Cursor is placed BEFORE track T when tc is in the half-open (t2prev, t1]
 %    Cursor is placed AFTER track T when tc=t2, ie at the end of the track.
-build_cursor(<, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % t ...  (start, end)
-build_cursor(=, <, Fore, T, Aft, cursor(Fore, nothing, [T | Aft])). % (t=start,  end)
-build_cursor(=, =, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (t=start=end)
-build_cursor(>, <, Fore, T, Aft, cursor(Fore, just(T), Aft)).       % (start, t, end)
-build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], nothing, Aft)). % (start, t=end)
+build_cursor(<, <, Fore, T, Aft, cursor(Fore, [T | Aft])). % t ...  (start, end)
+build_cursor(=, <, Fore, T, Aft, cursor(Fore, [T | Aft])). % (t=start,  end)
+build_cursor(=, =, Fore, T, Aft, cursor(Fore, Aft)).       % (t=start=end)
+build_cursor(>, <, Fore, T, Aft, cursor(Fore, Aft)).       % (start, t, end)
+build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], Aft)). % (start, t=end)
 
 % --------------------------------------------------------------
 % play//1, play//2, play//3 - state transformers on list(song) * maybe(player_state)
