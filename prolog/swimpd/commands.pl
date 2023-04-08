@@ -298,8 +298,8 @@ track_in_direction(next, _, [T|_], T).
 %    Cursor is placed BEFORE track T when tc is in the half-open (t2prev, t1]
 %    Cursor is placed AFTER track T when tc=t2, ie at the end of the track.
 build_cursor(<, <, Fore, T, Aft, cursor(Fore, [T | Aft])). % t ...  (start, end)
-build_cursor(=, <, Fore, T, Aft, cursor(Fore, Aft)).       % (t=start,  end)
-build_cursor(=, =, Fore, T, Aft, cursor(Fore, Aft)).       % (t=start=end)
+build_cursor(=, <, Fore, _, Aft, cursor(Fore, Aft)).       % (t=start,  end)
+build_cursor(=, =, Fore, _, Aft, cursor(Fore, Aft)).       % (t=start=end)
 build_cursor(>, <, Fore, T, Aft, cursor([T | Fore], Aft)). % (start, t, end)
 build_cursor(>, =, Fore, T, Aft, cursor([T | Fore], Aft)). % (start, t=end)
 
