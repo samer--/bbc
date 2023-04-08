@@ -1,6 +1,7 @@
 :- module(telnetd, [telnet_server/3]).
 
 :- use_module(library(socket)).
+:- use_module(tools, [tracing_death/1]).
 
 %!  telnet_server(+Interactor, +Port, +Options) is det.
 %   Interactor is a callable goal that implements a protocl on the current
@@ -39,4 +40,5 @@ client(_, IO, _, _) :- format(IO, 'Access denied.~n', []).
 service_client(P, IO) :-
    thread_self(Self), debug(mpd(telnet, s(0)), 'Servicing telnet client on thread ~w', [Self]),
    maplist(set_stream(IO), [close_on_abort(false), encoding(utf8), newline(posix), buffer(full)]),
-   stream_pair(IO, In, Out), set_input(In), set_output(Out), call(P).
+   stream_pair(IO, In, Out), set_input(In), set_output(Out),
+   setup_call_catcher_cleanup(true, P, Status, debug(mpd(telnet, s(0)), "Client termination status: ~w", [Status])).

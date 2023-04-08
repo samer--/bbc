@@ -1,6 +1,6 @@
 :- module(tools, [(+)//1, (*)//1, parse_head//2, nat//1, num//1, atom//1, quoted//1, quoted//2, in/2, fnth/5,
                   decimal//0, report//1, report//2, select_nth/4, maybe//2, maybe/2, fmaybe/3, fjust/3, flip/4,
-                  spawn/1, setup_stream/2, registered/2, thread/2]).
+                  tracing_death/1, spawn/1, setup_stream/2, registered/2, thread/2]).
 
 :- use_module(library(listutils), [zip/3]).
 :- use_module(library(dcg_core), [(//)//2, list//1]).
@@ -8,12 +8,13 @@
 :- use_module(library(snobol), [notany//1, break//1]).
 
 :- dynamic thread/2.
-:- meta_predicate spawn(0), registered(+,0).
+:- meta_predicate spawn(0), registered(+,0), tracing_death(0).
 spawn(G) :- thread_create(G, _, [detached(true)]).
 setup_stream(Props, S) :- maplist(set_stream(S), Props).
 registered(N, G) :- thread_self(Id), setup_call_cleanup(register(N, Id), G, unregister(N, Id)).
 register(N, Id) :- debug(mpd(tools, s(0)), 'Registering thread ~w as ~w', [Id, N]), assert(thread(N, Id)).
 unregister(N, Id) :- debug(mpd(tools, s(0)), 'Unregistering thread ~w as ~w', [Id, N]), retract(thread(N, Id)).
+tracing_death(P) :- catch(P, Error, (print_message(error, Error), throw(Error))).
 
 parse_head(Head, Tail) --> break(` `) // list(H), {atom_codes(Head, H)}, list(Tail).
 

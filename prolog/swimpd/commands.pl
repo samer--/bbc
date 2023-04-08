@@ -269,12 +269,17 @@ step_track_or_prog(Dir) -->
 %  known to be before time T. The second list A should contain the tracks yet to
 %  be processed. F is used in recursive calls; the initial call has F=[].
 %  =|track|= is dictionary type that contains fields '.offset.start' and 'offset.end'.
+cursor_at_time(_, Fore, [], cursor(Fore, [])) :- !.
 cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
-   tol_compare(R1, Time, Track.offset.start),
-   tol_compare(R2, Time, Track.offset.end),
-   ( build_cursor(R1, R2, Fore, Track, Aft, Cursor) -> true
-   ; cursor_at_time(Time, [Track | Fore], Aft, Cursor)
-   ).
+   Track.offset = null, !,
+   cursor_at_time(Time, Fore, Aft, Cursor).
+cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
+   _{start:Start, end:End} :< Track.offset,
+   tol_compare(R1, Time, Start),
+   tol_compare(R2, Time, End),
+   build_cursor(R1, R2, Fore, Track, Aft, Cursor), !.
+cursor_at_time(Time, Fore, [Track | Aft], Cursor) :-
+   cursor_at_time(Time, [Track | Fore], Aft, Cursor).
 
 tol_compare(R, T1, T2) :-
    ( T1     < T2 -> R = (<)
