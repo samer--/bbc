@@ -179,7 +179,9 @@ entry_title_contains(Sub, E) :-
 
 service_live_url(S, URL) :-
    service(S, P, _),
-   format(string(URL), 'http://a.files.bbci.co.uk/media/live/manifesto/audio/simulcast/dash/uk/dash_full/ak/~s.mpd', [P]).
+   % A-B = 'media/live/manifesto'-'dash_full/ak',
+   A-B = 'ms6/live/3441A116-B12E-4D2F-ACA8-C1984642FA4B'-'pc_hd_abr_v2/aks',
+   format(string(URL), 'http://a.files.bbci.co.uk/~s/audio/simulcast/dash/uk/~s/~s.mpd', [A, B, P]).
 
 playlist(PID, json, 'http://www.bbc.co.uk/programmes/~s/playlist.json'-[PID]).
 pid_version(PID, C-I) :- uget(playlist(PID), PL), member(V, PL.allAvailableVersions), C=V.smpConfig, member(I, C.items).
