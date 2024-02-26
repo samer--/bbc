@@ -48,6 +48,7 @@ addid(['Live Radio'], nothing) --> {live_services(Services)}, foldl(add_live, Se
 addid(['PID', PID], just(Id)) --> {pid_id(PID, Id)}, add_pid(PID).
 addid(['Live Radio', LongName], just(Id)) --> {live_service(S, LongName), pid_id(S, Id)}, add_live(S-LongName).
 addid(['In Progress', PID], just(Id)) --> {once(pid_entry(_, PID, E)), pid_id(PID, Id)}, add('In Progress', E).
+addid(['youtube', YT_ID], just(Id)) --> {pid_id(YT_ID, Id)}, add_youtube(YT_ID).
 addid([ServiceName, PID], just(Id)) -->
    {service(S, ServiceName), ensure_service_schedule(S),  pid_entry(S, PID, E), pid_id(PID, Id)},
    add(ServiceName, E).
@@ -59,6 +60,29 @@ entry_url(E, URL) :- entry_xurl(_, E, _-URL).
 add_pid(PID) --> [song(PID, database:version_url(V), [file-PID|Tags])], {pid_version(PID, V), version_tags(V, Tags)}.
 version_tags(V, [duration-D, 'Title'-T, 'Comment'-S1]) :- maplist(version_prop(V), [duration(D), title(T), summary(S)]), to_one_line(S, S1).
 version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-URL).
+
+add_youtube(YT_ID) -->
+   [song(YT_ID, AudioURL, [file-File|Tags])],
+   {path_file(['youtube', YT_ID], File), youtube_info(YT_ID, '251', AudioURL, Tags)}.
+
+youtube_info(YT_ID, Format, =(URL), [duration-D, 'Title'-Title]) :-
+   parse_url(PageURL, [protocol(https), host('www.youtube.com'), path('/watch'), search([v=YT_ID])]),
+   shell_lines('yt-dlp', ['--format', Format, '--print', 'title', '--print', 'duration', '--print', 'urls', PageURL],
+               [Title, Duration, URL |_]),
+   number_string(D, Duration).
+
+shell_lines(Cmd, Args, Lines) :-
+   setup_call_cleanup(
+      process:process_create(path(Cmd), Args, [stdout(pipe(Out))]),
+      read_lines(Out, Lines),
+      close(Out)).
+
+read_lines(Out, Lines) :-
+   read_line_to_string(Out, Line1),
+   read_lines(Line1, Out, Lines).
+
+read_lines(end_of_file, _, []) :- !.
+read_lines(Line, Out, [Line|Lines]) :- read_lines(Out, Lines).
 
 % --- query db contents ---
 
