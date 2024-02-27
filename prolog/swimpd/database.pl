@@ -65,11 +65,16 @@ add_youtube(YT_ID) -->
    [song(YT_ID, AudioURL, [file-File|Tags])],
    {path_file(['youtube', YT_ID], File), youtube_info(YT_ID, '251', AudioURL, Tags)}.
 
-youtube_info(YT_ID, Format, =(URL), [duration-D, 'Title'-Title]) :-
+youtube_info(YT_ID, Format, database:youtube_audio_url(Format, PageURL), [duration-D, 'Title'-Title]) :-
    parse_url(PageURL, [protocol(https), host('www.youtube.com'), path('/watch'), search([v=YT_ID])]),
-   shell_lines('yt-dlp', ['--format', Format, '--print', 'title', '--print', 'duration', '--print', 'urls', PageURL],
-               [Title, Duration, URL |_]),
+   shell_lines('yt-dlp', ['--print', 'title', '--print', 'duration', PageURL], [Title, Duration |_]),
    number_string(D, Duration).
+
+youtube_audio_url(Format, PageURL, AudioURL) :-
+   shell_lines('yt-dlp', ['--format', Format, '--print', 'urls', PageURL], [AudioURL |_]).
+
+url_expiry(URL, ExpiryTime) :-
+   parse_url(URL, Parts), member(search(Search), Parts), member(expire=TS, Search), atom_number(TS, ExpiryTime).
 
 shell_lines(Cmd, Args, Lines) :-
    setup_call_cleanup(
