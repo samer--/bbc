@@ -62,7 +62,7 @@ version_tags(V, [duration-D, 'Title'-T, 'Comment'-S1]) :- maplist(version_prop(V
 version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-URL).
 
 add_youtube(YT_ID) -->
-   [song(YT_ID, AudioURL, [file-File|Tags])],
+   [song(YT_ID, AudioURL, [file-File, 'Artist'-'YouTube' | Tags])],
    {path_file(['youtube', YT_ID], File), youtube_info(YT_ID, '251', AudioURL, Tags)}.
 
 youtube_info(YT_ID, Format, database:youtube_audio_url(Format, PageURL), [duration-D, 'Title'-Title]) :-
