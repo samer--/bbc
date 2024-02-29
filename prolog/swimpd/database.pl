@@ -7,6 +7,7 @@
 :- module(database, [is_programme/1, pid_id/2, pid_tracks/2, id_pid/2, lsinfo//1, addid//2, db_update/1,
                      db_image/3, db_stats/1, db_count//1, db_find//2, db_find/3, db_list//3]).
 
+:- use_module(library(settings)).
 :- use_module(library(memo)).
 :- use_module(library(dcg_core),  [maybe/3]).
 :- use_module(library(listutils), [enumerate/2]).
@@ -16,6 +17,8 @@
 :- use_module(bbc(bbc_db), [service/1, service/2, fetch_new_schedule/1, service_live_url/2, pid_entry/3, pid_tracks/2,
                             service_entry/2, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3,
                             service_updated/2, entry_parents/2, version_prop/2, prog_xurl/3, pid_version/2]).
+
+:- setting(youtube_format, atom, '251', 'Format for YouTube streams').
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).
@@ -63,14 +66,15 @@ version_url(V, URL) :- version_prop(V, vpid(VPID)), prog_xurl(_, vpid(VPID), _-U
 
 add_youtube(YT_ID) -->
    [song(YT_ID, AudioURL, [file-File, 'Artist'-'YouTube' | Tags])],
-   {path_file(['youtube', YT_ID], File), youtube_info(YT_ID, '251', AudioURL, Tags)}.
+   {path_file(['youtube', YT_ID], File), youtube_info(YT_ID, AudioURL, Tags)}.
 
-youtube_info(YT_ID, Format, database:youtube_audio_url(Format, PageURL), [duration-D, 'Title'-Title]) :-
+youtube_info(YT_ID, database:youtube_audio_url(PageURL), [duration-D, 'Title'-Title]) :-
    parse_url(PageURL, [protocol(https), host('www.youtube.com'), path('/watch'), search([v=YT_ID])]),
    shell_lines('yt-dlp', ['--print', 'title', '--print', 'duration', PageURL], [Title, Duration |_]),
    number_string(D, Duration).
 
-youtube_audio_url(Format, PageURL, AudioURL) :-
+youtube_audio_url(PageURL, AudioURL) :-
+   setting(youtube_format, Format),
    shell_lines('yt-dlp', ['--format', Format, '--print', 'urls', PageURL], [AudioURL |_]).
 
 url_expiry(URL, ExpiryTime) :-
