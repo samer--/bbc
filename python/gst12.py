@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import sys
 import gi
 import threading
 import operator as op
-from functools import partial as bind
+from functools import partial as bind, reduce
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -18,7 +18,7 @@ def compose(*args): return reduce(compose2, args)
 def const(x):       return lambda _: x
 def tuncurry(f):    return lambda args: reduce(lambda f, x: f(x), args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
-def snd((_, x)):    return x
+def snd(xy): _, y = xy; return y
 def decons(xs):     return xs[0], xs[1:]
 def mul(y):         return lambda x: x * y
 def divby(y):       return lambda x: float(x) / y
@@ -26,7 +26,7 @@ def maybe(f):       return lambda x: None if x is None else f(x)
 def guard(p):       return lambda x: x if p(x) else None
 _normal = '\033[0m'
 def print_stderr(m): sys.stderr.write(''.join([col(0,'yellow'), m, _normal, '\n'])); sys.stderr.flush()
-def swap((x,y)): return y, x
+def swap(xy): x, y = xy; return y, x
 def col(brightness, name): return '\033[%dm' % ([30, 90][brightness] + _colours[name])
 _colours = dict(map(swap, enumerate(['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'])))
 @delay
@@ -49,14 +49,14 @@ ns_to_s, s_to_ns = fork(divby, mul)(10 ** 9)
 mutex = threading.Lock()
 lock = Context(lambda: (mutex.release, mutex.acquire()))
 
-def to_maybe((valid, x)): return x if valid else None
+def to_maybe(t): valid, x = t; return x if valid else None
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format'), to_maybe(c.get_int('channels')))
 def get_cap(p): return maybe(lambda a: a.get_current_caps().get_structure(0))(p.emit('get-audio-pad', 0))
 def tr(x): sys.stderr.write('%s\n' % repr(x)); return x
 def print_(s):
-    with lock: print s; sys.stdout.flush()
+    with lock: print(s); sys.stdout.flush()
 maybe_fmt_cap = maybe(compose(rpt('format'), fmt_cap))
 
 def changes(state, x):
