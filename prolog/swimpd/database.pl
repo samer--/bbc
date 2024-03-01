@@ -73,9 +73,10 @@ youtube_info(YT_ID, database:youtube_audio_url(PageURL), [duration-D, 'Title'-Ti
    shell_lines('yt-dlp', ['--print', 'title', '--print', 'duration', PageURL], [Title, Duration |_]),
    number_string(D, Duration).
 
-youtube_audio_url(PageURL, AudioURL) :-
-   setting(youtube_format, Format),
-   shell_lines('yt-dlp', ['--format', Format, '--print', 'urls', PageURL], [AudioURL |_]).
+youtube_audio_url(PageURL, PageURL).
+% youtube_audio_url(PageURL, AudioURL) :-
+%    setting(youtube_format, Format),
+%    shell_lines('yt-dlp', ['--format', Format, '--print', 'urls', PageURL], [AudioURL |_]).
 
 url_expiry(URL, ExpiryTime) :-
    parse_url(URL, Parts), member(search(Search), Parts), member(expire=TS, Search), atom_number(TS, ExpiryTime).
