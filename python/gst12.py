@@ -32,6 +32,20 @@ _colours = dict(map(swap, enumerate(['black', 'red', 'green', 'yellow', 'blue', 
 @delay
 def tracef(info, f, arg): print_stderr("==> %s: %r" % (info, arg)); return f(arg)
 
+def unsingleton(x): (x,) = x; return x
+def find_unique(p, xs): return unsingleton(filter(p, xs))
+
+_Null = object()
+def memoise(f):
+    memo = {}
+    def g(*x):
+        y = memo.get(x, _Null)
+        if y is _Null:
+            y = f(*x)
+            memo[x] = y
+        return y
+    return g
+
 pos = bind(op.lt, 0)
 
 class Context(object):
@@ -58,6 +72,19 @@ def print_(s):
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format') or 'F', to_maybe(c.get_int('channels')))
 rpt_cap = compose(rpt('format'), lambda c: fmt_cap(c.get_structure(0)))
 def maybe_rpt_cap(p): return maybe(lambda a: rpt_cap(a.get_current_caps())(p.emit('get-audio-pad', 0)))
+
+@memoise
+def yt_dlp():
+    import yt_dlp
+    yt=yt_dlp.YoutubeDL(params={'logtostderr': True}, auto_init=False)
+    yt.add_info_extractor(yt.get_info_extractor('Youtube'))
+    return yt
+
+def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
+def youtube_url(url):
+    i = yt_dlp().extract_info(url, download=False)
+    def pred(i): return i['format_id'] == '251'
+    return find_unique(pred, i['formats'])['url']
 
 def changes(state, x):
     if x == state[0]: return None
@@ -89,7 +116,7 @@ def main():
                   , 'id_pos':   lambda a: rpt('id_pos')('%s:%s' % (a[0], position()))
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
-                  , 'uri':      lambda a: (stop(), p.set_property('uri', a[0]), pause(), sync()) # maybe_rpt_cap(p))
+                  , 'uri':      lambda a: (stop(), p.set_property('uri', url(a[0])), pause(), sync()) # maybe_rpt_cap(p))
                   , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
                   , '':         lambda _: (print_stderr('quitting'), exit())
                   })
