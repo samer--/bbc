@@ -7,7 +7,6 @@
 :- module(database, [is_programme/1, pid_id/2, pid_tracks/2, id_pid/2, lsinfo//1, addid//2, db_update/1,
                      db_image/3, db_stats/1, db_count//1, db_find//2, db_find/3, db_list//3]).
 
-:- use_module(library(settings)).
 :- use_module(library(memo)).
 :- use_module(library(dcg_core),  [maybe/3]).
 :- use_module(library(listutils), [enumerate/2]).
@@ -17,8 +16,6 @@
 :- use_module(bbc(bbc_db), [service/1, service/2, fetch_new_schedule/1, service_live_url/2, pid_entry/3, pid_tracks/2,
                             service_entry/2, entry_prop/2, entry_maybe_parent/3, entry_xurl/3, interval_times/3,
                             service_updated/2, entry_parents/2, version_prop/2, prog_xurl/3, pid_version/2]).
-
-:- setting(youtube_format, atom, '251', 'Format for YouTube streams').
 
 :- volatile_memo pid_id(+atom, -integer).
 pid_id(_, Id) :- flag(songid, Id, Id+1).

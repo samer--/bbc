@@ -1,6 +1,7 @@
 :- module(gst, [start_gst_thread/0, gst_audio_info/2, enact_player_change/3, set_volume/1]).
 % TODO: audio and video sink control. Fix protocol. Handle timeout better.
 
+:- use_module(library(settings)).
 :- use_module(library(insist), [insist/1]).
 :- use_module(library(dcg_core), [seqmap_with_sep//3, set/3, (//)//2]).
 :- use_module(library(dcg_codes), [fmt//2]).
@@ -11,6 +12,8 @@
                        fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
+
+:- setting(youtube_format, atom, '251', 'Format for YouTube streams').
 
 start_gst_thread :- thread_create(tracing_death(gst_thread), _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
 gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []). % FIXME: should notify master thread
@@ -23,7 +26,8 @@ gst_peer :-
                       process_wait(PID, _Status)).
 
 start_gst(PID,In-Out) :-
-   process_create(python('gst12.py'), [], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
+   setting(youtube_format, Format),
+   process_create(python('gst12.py'), [Format], [stdin(pipe(In)), stdout(pipe(Out)), stderr(std), process(PID)]),
    debug(mpd(gst, s(s(0))), 'Started gstreamer slave process on PID ~w.', [PID]).
 
 gst_reader_thread(_-(In-Out)) :-

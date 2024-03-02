@@ -80,16 +80,16 @@ def yt_dlp():
     yt.add_info_extractor(yt.get_info_extractor('Youtube'))
     return yt
 
-def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
-def youtube_url(url):
-    i = yt_dlp().extract_info(url, download=False)
-    def pred(i): return i['format_id'] == '251'
-    return find_unique(pred, i['formats'])['url']
-
 def changes(state, x):
     if x == state[0]: return None
     state[0] = x; return x
-def main():
+def main(yt_fmt):
+    def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
+    def youtube_url(url):
+        i = yt_dlp().extract_info(url, download=False)
+        def pred(i): return i['format_id'] == yt_fmt
+        return find_unique(pred, i['formats'])['url']
+
     p = Gst.ElementFactory.make("playbin3", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
     durations = bind(changes, [0.0])
@@ -128,4 +128,4 @@ def main():
     with Context(lambda: (stop, None)):
         while True: wrapper[0](player)(decons(sys.stdin.readline().rstrip().split(' ', 1)))
 
-if __name__ == '__main__': main()
+if __name__ == '__main__': main(sys.argv[1])
