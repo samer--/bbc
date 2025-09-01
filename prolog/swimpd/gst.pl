@@ -37,7 +37,9 @@ gst_reader_thread(_-(In-Out)) :-
 :- det(gst_reader/1).
 gst_reader(Out) :-
    maplist(state, [volume, player, queue], [V, Player, _-Songs]),
-   set_volume(V), enact_player_change([]-Songs, nothing, Player),
+   set_volume(V),
+   catch(enact_player_change([]-Songs, nothing, Player),
+         _, set_states(player, nothing)),
    thread_self(Self), gst_read_next(Self, Out).
 
 % pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
