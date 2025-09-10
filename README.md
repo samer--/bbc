@@ -14,6 +14,9 @@ Work in progress, but works pretty well with clients mpc, ncmpc, MPDroid and M.A
 (the latter two for Android). Not so good with Theremin, mainly because the Artist
 tag is not defined for any programme.
 
+Requires:
+    memo, fileutils, dcgutils
+
 ## bbc.py - Python script to get media stream URL from programme id
 
 Run `./bbc.py -h` for help. Writes stream URLs for a given programme id (PID)
