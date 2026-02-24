@@ -72,6 +72,7 @@ def print_(s):
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format') or 'F', to_maybe(c.get_int('channels')))
 rpt_cap = compose(rpt('format'), lambda c: fmt_cap(c.get_structure(0)))
 def maybe_rpt_cap(p): return maybe(lambda a: rpt_cap(a.get_current_caps())(p.emit('get-audio-pad', 0)))
+def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
 
 @memoise
 def yt_dlp():
@@ -88,7 +89,7 @@ def main(yt_fmt):
     def youtube_url(url):
         i = yt_dlp().extract_info(url, download=False)
         def pred(i): return i['format_id'] == yt_fmt
-        return find_unique(pred, i['formats'])['url']
+        return tr(find_unique(pred, i['formats'])['url'])
 
     p = Gst.ElementFactory.make("playbin3", None)
     stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
@@ -101,7 +102,7 @@ def main(yt_fmt):
                    , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag)
                    , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
-                   , MT.STREAM_COLLECTION: compose(rpt_cap, lambda m: m.parse_stream_collection().get_stream(0).get_caps())
+                   , MT.STREAM_COLLECTION: compose(maybe(rpt_cap), stream_caps)
                    })
     def handle_msg(m): events(m.type)(m)
     def sync():     p.get_state(Gst.CLOCK_TIME_NONE)

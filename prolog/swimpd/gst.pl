@@ -13,7 +13,7 @@
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
 
-:- setting(youtube_format, atom, '251', 'Format for YouTube streams').
+:- setting(youtube_format, atom, '234', 'Format for YouTube streams').
 
 start_gst_thread :- thread_create(tracing_death(gst_thread), _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
 gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []). % FIXME: should notify master thread
