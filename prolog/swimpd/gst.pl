@@ -38,8 +38,9 @@ gst_reader_thread(_-(In-Out)) :-
 gst_reader(Out) :-
    maplist(state, [volume, player, queue], [V, Player, _-Songs]),
    set_volume(V),
-   catch(enact_player_change([]-Songs, nothing, Player),
-         _, set_states(player, nothing)),
+   catch(enact_player_change([]-Songs, nothing, Player), Ex,
+         (debug(mpd(gst, s(s(0))), "Could not initialise player with state ~q [~q]", [Player, Ex]),
+          notify_eos)),
    thread_self(Self), gst_read_next(Self, Out).
 
 % pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
