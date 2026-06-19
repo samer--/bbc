@@ -35,6 +35,7 @@ local(ip(192,168,1,_)).
 main :-
    writeln("<<< Starting SWIMPD - BBC Music Player Daemon >>>"),
    current_prolog_flag(argv, [PortAtom, StateFile | DebugTopics]),
+   load_settings('/home/samer/var/swimpd/settings.pl'),
    forall(member(A, DebugTopics), (atom_to_term(A,T,[]), debug(T))),
    atom_number(PortAtom, Port), attach(StateFile), sync_state, mpd_init,
    setup_call_cleanup(start_gst_thread,
