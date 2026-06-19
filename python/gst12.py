@@ -3,6 +3,7 @@ import sys
 import gi
 import threading
 import operator as op
+import importlib.util
 from functools import partial as bind, reduce
 
 gi.require_version('Gst', '1.0')
@@ -31,9 +32,15 @@ def col(brightness, name): return '\033[%dm' % ([30, 90][brightness] + _colours[
 _colours = dict(map(swap, enumerate(['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'])))
 @delay
 def tracef(info, f, arg): print_stderr("==> %s: %r" % (info, arg)); return f(arg)
+def apply_to(x,f): return f(x)
+def with_as(r,f):
+    with r as x: return f(x)
 
 def unsingleton(x): (x,) = x; return x
 def find_unique(p, xs): return unsingleton(filter(p, xs))
+
+no_overrides = importlib.util.find_spec('gi.overrides.Gst') is None
+with_structure = apply_to if no_overrides else with_as
 
 _Null = object()
 def memoise(f):
@@ -66,12 +73,11 @@ lock = Context(lambda: (mutex.release, mutex.acquire()))
 def to_maybe(t): valid, x = t; return x if valid else None
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
-def tr(x): sys.stderr.write('%s\n' % repr(x)); return x
+def tr(x): sys.stderr.write('%s\n' % str(x)); return x
 def print_(s):
     with lock: print(s); sys.stdout.flush()
 def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format') or 'F', to_maybe(c.get_int('channels')))
-rpt_cap = compose(rpt('format'), lambda c: fmt_cap(c.get_structure(0)))
-def maybe_rpt_cap(p): return maybe(lambda a: rpt_cap(a.get_current_caps())(p.emit('get-audio-pad', 0)))
+def rpt_cap(c): return rpt('format')(with_structure(c.get_structure(0), fmt_cap))
 def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
 
 @memoise
@@ -117,7 +123,7 @@ def main(yt_fmt):
                   , 'id_pos':   lambda a: rpt('id_pos')('%s:%s' % (a[0], position()))
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
-                  , 'uri':      lambda a: (stop(), p.set_property('uri', url(a[0])), pause(), sync()) # maybe_rpt_cap(p))
+                  , 'uri':      lambda a: (stop(), p.set_property('uri', url(a[0])), pause(), sync())
                   , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
                   , '':         lambda _: (print_stderr('quitting'), exit())
                   })
