@@ -3,12 +3,12 @@
 
 :- use_module(bbc_db).
 :- use_module(library(fileutils), [with_output_to_file/2]).
-:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1]).
+:- use_module(bbc_tools, [log_failure/1, log_and_succeed/1, sort_by/3]).
 
 save_service_playlist(Now, Dir, Service, Expiry) :-
    InOneWeek is Now + 7*24*3600,
    debug(bbc, 'Gathering playlist for ~w...', [Service]),
-   findall(E, distinct(PID, service_pid_entry(S, PID, E)), Entries),
+   findall(E, distinct(PID, bbc_db:service_entry_pid(Service, E, PID)), Entries),
    sort_by(entry_sortkey, Entries, SortedEntries),
    findall(XU-E, (member(E, SortedEntries), log_failure(entry_xurl(best("hls"), E, XU))), Items),
    foldl(min_expiry, Items, InOneWeek, Expiry),
@@ -25,7 +25,7 @@ write_playlist_item((_-URL)-E) :-
    maplist(entry_prop(E), [title(Title), duration(Dur), broadcast(B)]),
    interval_times(B, BStart, _),
    format_time(string(BDate), '%x', BStart),
-   format('#EXTINF:~d, ~s [~s]\n~w\n', [Dur, Title, BDate, URL]).
+   format('#EXTINF:~w, ~s [~s]\n~w\n', [Dur, Title, BDate, URL]).
 
 start_service_maintenance(Dir, Service) :-
    thread_create(maintain_service(Dir, Service), _, [detached(true)]).
