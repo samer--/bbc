@@ -72,12 +72,13 @@ mutex = threading.Lock()
 lock = Context(lambda: (mutex.release, mutex.acquire()))
 
 def to_maybe(t): valid, x = t; return x if valid else None
+def maybe_int(c, k): return to_maybe(c.get_int(k))
 def rpt(l): return lambda x: print_('%s %s' % (l, str(x)))
 def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
 def tr(x): sys.stderr.write('%s\n' % str(x)); return x
 def print_(s):
     with lock: print(s); sys.stdout.flush()
-def fmt_cap(c): return '%s:%s:%s' % (to_maybe(c.get_int('rate')), c.get_string('format') or 'F', to_maybe(c.get_int('channels')))
+def fmt_cap(c): return '%s:%s:%s' % (maye_int(c,'rate'), c.get_string('format') or 'F', maybe_int(c, 'channels'))
 def rpt_cap(c): return rpt('format')(with_structure(c.get_structure(0), fmt_cap))
 def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
 
@@ -110,7 +111,7 @@ def main():
                    , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag)
                    , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
-                   , MT.STREAM_COLLECTION: compose(rpt_cap, lambda m: m.parse_stream_collection().get_stream(0).get_caps())
+                   , MT.STREAM_COLLECTION: compose(rpt_cap, stream_caps)
                    })
     def handle_msg(m): events(m.type)(m)
     def sync():     p.get_state(Gst.CLOCK_TIME_NONE)
