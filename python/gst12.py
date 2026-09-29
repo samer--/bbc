@@ -78,7 +78,7 @@ def tl_bitrate(tl): return snd(tl.get_uint('bitrate'))
 def tr(x): sys.stderr.write('%s\n' % str(x)); return x
 def print_(s):
     with lock: print(s); sys.stdout.flush()
-def fmt_cap(c): return '%s:%s:%s' % (maye_int(c,'rate'), c.get_string('format') or 'F', maybe_int(c, 'channels'))
+def fmt_cap(c): return '%s:%s:%s' % (maybe_int(c,'rate'), c.get_string('format') or 'F', maybe_int(c, 'channels'))
 def rpt_cap(c): return rpt('format')(with_structure(c.get_structure(0), fmt_cap))
 def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
 
