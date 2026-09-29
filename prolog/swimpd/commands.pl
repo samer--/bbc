@@ -325,7 +325,7 @@ update_play_state(keep, Pos, I, just(ps(_, Sl1)), just(ps(Pos, Sl2))) :- fmaybe(
 update_slave(Dur, P-_, P-0.0/Dur).
 
 gst:id_wants_bookmark(PID) :- is_programme(PID).
-gst:notify_eos :- updating_play_state(eos_player), updating_queue_state(eos_queue).
+gst:notify_eos :- updating_play_state(eos_player), updating_queue_state(eos_queue). % FIXME: double enact?
 
 % -- status --
 report_status((Ver-Songs)-PS) -->

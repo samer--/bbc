@@ -15,7 +15,7 @@
 start_gst_thread :- thread_create(tracing_death(gst_thread), _, [at_exit(gst_slave_exit), alias(gst_slave), detached(false)]).
 gst_slave_exit   :- debug(mpd(gst,s(s(0))), 'Thread exit.', []). % FIXME: should notify master thread
 gst_thread :- catch(forever(gst_peer), shutdown, true), debug(mpd(gst,s(s(0))), 'gst_thread clean shutdown.', []).
-forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w', [P]), forever(P).
+forever(P) :- call(P), debug(mpd(gst,s(s(0))), 'Restarting ~w in 1 sec', [P]), sleep(1), forever(P).
 
 gst_peer :-
    setup_call_cleanup(start_gst(PID, IO),
@@ -33,7 +33,10 @@ gst_reader_thread(_-(In-Out)) :-
 :- det(gst_reader/1).
 gst_reader(Out) :-
    maplist(state, [volume, player, queue], [V, Player, _-Songs]),
-   set_volume(V), enact_player_change([]-Songs, nothing, Player),
+   set_volume(V),
+   catch(enact_player_change([]-Songs, nothing, Player), Ex,
+         (debug(mpd(gst, s(s(0))), "Could not initialise player with state ~q [~q]", [Player, Ex]),
+          notify_eos)),
    thread_self(Self), gst_read_next(Self, Out).
 
 % pause_player(ps(Pos, Sl1), ps(Pos, Sl2)) :- fmaybe(ffst(set(pause)), Sl1, Sl2).
@@ -72,7 +75,7 @@ send(P) :-
 
 recv_position(Pos) :-
    thread(gst(_), Id),
-   (  thread_get_message(Id, position(Pos), [timeout(15)]) -> true
+   (  thread_get_message(Id, position(Pos), [timeout(2)]) -> true
    ;  print_message(warning, recv_timeout(position)), fail
    ).
 

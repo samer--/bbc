@@ -14,6 +14,17 @@ Work in progress, but works pretty well with clients mpc, ncmpc, MPDroid and M.A
 (the latter two for Android). Not so good with Theremin, mainly because the Artist
 tag is not defined for any programme.
 
+Requires SWI Prolog packages:
+    memo, fileutils, dcgutils
+
+NB. Recent Macports version of Python Gnome introspection (gi) seem to require
+an environment variable to work properly. This is now baked into the `launchd`
+service, but for command line invocation of the player daemon, add this to your
+shell profile:
+```sh
+export GSETTINGS_SCHEMA_DIR=/opt/local/share/glib-2.0/schemas
+```
+
 ## bbc.py - Python script to get media stream URL from programme id
 
 Run `./bbc.py -h` for help. Writes stream URLs for a given programme id (PID)
