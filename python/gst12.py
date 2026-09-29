@@ -114,7 +114,7 @@ def main():
                    })
     def handle_msg(m): events(m.type)(m)
     def sync():     p.get_state(Gst.CLOCK_TIME_NONE)
-    def position(): return ns_to_s(p.query_position(_FORMAT_TIME)[1])
+    def position(): return ns_to_s(max(0, p.query_position(_FORMAT_TIME)[1]))
     def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t)), sync()
     def case(d):    return tuncurry(def_consult(lambda _: print_('unrecognised'), d))
     player = case({ 'stop':     lambda _: (stop(), p.set_property('uri', ''), durations(0.0))
