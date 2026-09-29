@@ -40,9 +40,6 @@ def with_as(r,f):
 def unsingleton(x): (x,) = x; return x
 def find_unique(p, xs): return unsingleton(filter(p, xs))
 
-no_overrides = importlib.util.find_spec('gi.overrides.Gst') is None
-with_structure = apply_to if no_overrides else with_as
-
 _Null = object()
 def memoise(f):
     memo = {}
@@ -63,6 +60,9 @@ class Context(object):
         self.cleanup, x = self.setup()
         return x
 # ----------- end of digest ------------
+
+no_overrides = importlib.util.find_spec('gi.overrides.Gst') is None
+with_structure = apply_to if no_overrides else with_as
 
 MT = Gst.MessageType
 M = Gst.Message
@@ -94,6 +94,7 @@ def changes(state, x):
     state[0] = x; return x
 def main():
     yt_fmt = os.getenv('YOUTUBE_FORMAT', '251')
+    tr('gst12.py: YOUTUBE_FORMAT=%s, no_overridess=%s' % (yt_fmt, no_overrides))
     def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
     def youtube_url(url):
         i = yt_dlp().extract_info(url, download=False)
@@ -101,7 +102,7 @@ def main():
         return find_unique(pred, i['formats'])['url']
 
     p = Gst.ElementFactory.make("playbin3", None)
-    stop, pause, play = tuple(map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING]))
+    stop, pause, play = map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING])
     durations = bind(changes, [0.0])
     wrapper = [identity] # MUTABLE cell . alternatively: [bind(tracef, 'player')]
 
