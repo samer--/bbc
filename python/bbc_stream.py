@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import json
 from urllib import urlopen
 from pytools.basetools import with_resource, extend, conj, fst, snd, delay, for_each, print_
