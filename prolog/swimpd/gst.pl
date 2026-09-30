@@ -46,7 +46,7 @@ gst_handle(Codes, Self, Out) :-
    debug(mpd(gst, 0), '<~~ ~s', [Codes]),
    insist(parse_head(Head, Tail, Codes, [])),
    (  phrase(gst_message(Head, Globals), Tail) -> maplist(set_global, Globals)
-   ;  debug(mpd(gst, 0), 'Ignoring message from gst12: ~w~s', [Head, Tail])
+   ;  debug(mpd(gst, s(0)), 'Ignoring message from gst12: ~w~s', [Head, Tail])
    ),
    gst_read_next(Self, Out).
 
