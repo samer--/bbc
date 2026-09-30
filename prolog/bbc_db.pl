@@ -233,8 +233,8 @@ dom_tracks(DOM, Tracks) :-
    Queries = JSONData.get(props).pageProps.dehydratedState.queries,
    nth1(_, Queries, Query), Data = Query.state.data.get(data),
    nth1(_, Data, Datum), Datum.title = "Tracklist", !,
-   Tracks = Datum.data,
-   debug(mpd(bbc, s(s(0))), 'Got track list: ~s', [Tracks]).
+   Tracks = Datum.data, length(Tracks, NTracks),
+   debug(mpd(bbc, s(s(0))), 'Got track list with ~d items.', [NTracks]).
 
 dom_json(DOM, JSONData) :-
    xpath(DOM, body/div(@id='orb-modules')//script(content), [JSExpr]),
