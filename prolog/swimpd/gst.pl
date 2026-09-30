@@ -66,7 +66,6 @@ sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
 
 set_global(K-V) :- set_vstate(K, V). %, notify_all([player]). % Upsets MPD Droid
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
-gst_uri(URI) :- send(fmt("uri ~s",[URI])).
 
 send(P) :-
    thread(gst(In), _), phrase(P, Codes),
@@ -113,6 +112,7 @@ stop_if_playing(SongsPos, _) :- save_position(SongsPos), send("stop").
 cue_and_maybe_play(Songs-Pos, P-(_/Dur)) :-
    nth0(Pos, Songs, song(_, GetURL, _)), once(call(GetURL, URL)),
    maplist(set_global, [bitrate-nothing, format-nothing, duration-Dur]),
+   debug(mpd(gst,s(s(0))), 'Stream URI: ~w', [URL]),
    send(fmt('uri ~s', [URL])),
    restore_position(Songs-Pos),
    (P=play -> send("play"); true).
