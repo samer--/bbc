@@ -85,7 +85,9 @@ def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
 @memoise
 def yt_dlp():
     import yt_dlp
-    yt=yt_dlp.YoutubeDL(params={'logtostderr': True}, auto_init=False)
+    deno = {'deno': {'path':os.getenv('DENO_BINARY', 'deno')}}
+    params = params={'logtostderr': True, 'js_runtimes':deno, 'remote_components':['ejs:github']}
+    yt=yt_dlp.YoutubeDL(params=params, auto_init=False)
     yt.add_info_extractor(yt.get_info_extractor('Youtube'))
     return yt
 
@@ -99,6 +101,7 @@ def main():
     def youtube_url(url):
         i = yt_dlp().extract_info(url, download=False)
         def pred(i): return i['format_id'] == yt_fmt
+        tr('formats: %s' % [f['format_id'] for f in i['formats']])
         return find_unique(pred, i['formats'])['url']
 
     p = Gst.ElementFactory.make("playbin3", None)
