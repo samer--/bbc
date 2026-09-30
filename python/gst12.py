@@ -2,6 +2,7 @@
 import sys
 import gi
 import os
+import json
 import threading
 import operator as op
 import importlib.util
@@ -37,6 +38,7 @@ def apply_to(x,f): return f(x)
 def with_as(r,f):
     with r as x: return f(x)
 
+def json_read(f): return with_as(open(f, 'r'), json.load)
 def unsingleton(x): (x,) = x; return x
 def find_unique(p, xs): return unsingleton(filter(p, xs))
 
@@ -86,17 +88,14 @@ def changes(state, x):
     if x == state[0]: return None
     state[0] = x; return x
 
-yt_fmt = os.getenv('YOUTUBE_FORMAT', '251')
+yt_fmt = os.getenv('GST12_YTDLP_FORMAT', '251')
 
 @memoise
 def yt_dlp():
     import yt_dlp
-    params = {'logtostderr': True, 
-              'cookiesfrombrowser': ('firefox',),
-              'js_runtimes': {'deno': {'path':os.getenv('DENO_BINARY', 'deno')}},
-              'remote_components':['ejs:github']}
-    tr('gst12: Initialising yt-dlp...')
-    yt=yt_dlp.YoutubeDL(params=params, auto_init=False)
+    params = maybe(json_read)(os.getenv('GST12_YTDLP_CONFIG'))
+    tr('gst12: Initialising yt-dlp with %s...' % params)
+    yt=yt_dlp.YoutubeDL(params=dict(params or {}, logtostderr=True), auto_init=False)
     yt.add_info_extractor(yt.get_info_extractor('Youtube'))
     tr('gst12: Initialised yt-dlp object.')
     return yt
@@ -108,11 +107,12 @@ def youtube_url(url):
     return find_unique(pred, i['formats'])['url']
 
 def youtube_url_alt(url):
-    args = ['yt-dlp', '--format', 'bestaudio', '--print', 'urls', url]
+    import subprocess
+    args = ['yt-dlp', '-v', '--format', 'bestaudio', '--print', 'urls', url]
     return subprocess.check_output(args, text=True)
 
 def main():
-    tr('gst12: YOUTUBE_FORMAT=%s, no_overridess=%s' % (yt_fmt, no_overrides))
+    tr('gst12: Using gst overrides? %s' % (not no_overrides))
     def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
 
     p = Gst.ElementFactory.make("playbin3", None)
