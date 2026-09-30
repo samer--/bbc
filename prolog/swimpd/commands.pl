@@ -28,14 +28,11 @@
    @todo
    Core
       seek, CLP approach?
-      lightweight threads
       more efficient artist-album-track database view
       review process synch and comms, see eg Erlang approach
 
    Control
       rewind if playing track where current position is at end
-      Better seekable timeline for radio streams
-      Stop GST player after some time to release audio device
 
    State management:
       version_queue/2 -> version tree, undo etc. (plchanges?)
@@ -45,7 +42,6 @@
       clearerror (check error in status?) consume, mutliple group
 
    Extensions:
-      Set up as service under Linux or Mac OS launchd (see how MPD does it)
       Actions on timer: update db, add certain programmes to playlist
       Use tracklist for cool stuff:
       - seek to nth/prev/next track
@@ -60,8 +56,8 @@
 %  and db update times to now. States:
 %  queue  : pair(integer, list(song))
 %  player : maybe(play_state).
-%  play_state ---> ps(natural, maybe(pair(pause_state, au_state))).
-%  au_state   ---> au(duration, elapsed, bitrate, format).
+%  play_state ---> ps(natural, maybe(pair(pause_state, progress))).
+%  progress   ---> float / float. % Elapsed / Duration
 %  pause_state ---> play; pause.
 mpd_init :-
    get_time(Now), flag(update, _, 1),
