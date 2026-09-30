@@ -244,9 +244,12 @@ upd_pos(prev, _, Pos, Pos1) :- succ(Pos1, Pos).
 % TODO: target the ENDS of tracks, not the starts?
 step_track_or_prog(Dir) -->
    (  current(_, PID), {is_programme(PID), pid_tracks(PID, Tracks)}
-   -> {gst_audio_info(_, au(_Dur, Elap, _, _)),
-       cursor_at_time(Elap, [], Tracks, cursor(Fore, Aft)),
-       track_in_direction(Dir, Fore, Aft, Target)
+   -> { gst_audio_info(_, au(_Dur, Elap, _, _)),
+        cursor_at_time(Elap, [], Tracks, cursor(Fore, Aft)),
+        maplist(length, [Tracks, Fore, Aft], [NTracks, NFore, NAft]),
+        debug(mpd(commands,s(s(0))), 'Programme ~w has ~d segments', [PID, NTracks]),
+        debug(mpd(commands,s(s(0))), 'Cursor: ~d fore, ~d aft.', [NFore, NAft]),
+        track_in_direction(Dir, Fore, Aft, Target)
       },
       seekcur(abs(Target.offset.start))
    ;  step(play, Dir)

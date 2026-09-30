@@ -229,12 +229,18 @@ player_page(PID, html, 'https://www.bbc.co.uk/sounds/play/~s'-[PID]).
 :- volatile_memo pid_tracks(+atom, -any).
 pid_tracks(PID, Tracks) :- insist(uget(player_page(PID), [DOM])), insist(dom_tracks(DOM, Tracks)).
 dom_tracks(DOM, Tracks) :-
+   dom_json(DOM, JSONData),
+   Queries = JSONData.get(props).pageProps.dehydratedState.queries,
+   nth1(_, Queries, Query), Data = Query.state.data.get(data),
+   nth1(_, Data, Datum), Datum.title = "Tracklist", !,
+   Tracks = Datum.data,
+   debug(mpd(bbc, s(s(0))), 'Got track list: ~s', [Tracks]).
+
+dom_json(DOM, JSONData) :-
    xpath(DOM, body/div(@id='orb-modules')//script(content), [JSExpr]),
    once(sub_string(JSExpr, I, 1, _, "{")),
-   sub_string(JSExpr, I, _, 2, JSONExpr),
-   atom_json_dict(JSONExpr, JSONData, []),
-   Tracks = JSONData.get(tracklist).get(tracks).
-
+   sub_string(JSExpr, I, _, 0, JSONExpr),
+   atom_json_dict(JSONExpr, JSONData, []).
 
 % --- term display -----
 user:portray(ts(Timestamp)) :- format_time(user_output, '<%FT%T%z>', Timestamp).
