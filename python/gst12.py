@@ -82,27 +82,38 @@ def fmt_cap(c): return '%s:%s:%s' % (maybe_int(c,'rate'), c.get_string('format')
 def rpt_cap(c): return rpt('format')(with_structure(c.get_structure(0), fmt_cap))
 def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
 
-@memoise
-def yt_dlp():
-    import yt_dlp
-    deno = {'deno': {'path':os.getenv('DENO_BINARY', 'deno')}}
-    params = params={'logtostderr': True, 'js_runtimes':deno, 'remote_components':['ejs:github']}
-    yt=yt_dlp.YoutubeDL(params=params, auto_init=False)
-    yt.add_info_extractor(yt.get_info_extractor('Youtube'))
-    return yt
-
 def changes(state, x):
     if x == state[0]: return None
     state[0] = x; return x
+
+yt_fmt = os.getenv('YOUTUBE_FORMAT', '251')
+
+@memoise
+def yt_dlp():
+    import yt_dlp
+    params = {'logtostderr': True, 
+              'cookiesfrombrowser': ('firefox',),
+              'js_runtimes': {'deno': {'path':os.getenv('DENO_BINARY', 'deno')}},
+              'remote_components':['ejs:github']}
+    tr('gst12: Initialising yt-dlp...')
+    yt=yt_dlp.YoutubeDL(params=params, auto_init=False)
+    yt.add_info_extractor(yt.get_info_extractor('Youtube'))
+    tr('gst12: Initialised yt-dlp object.')
+    return yt
+
+def youtube_url(url):
+    i = yt_dlp().extract_info(url, download=False)
+    def pred(i): return i['format_id'] == yt_fmt
+    tr('formats: %s' % [f['format_id'] for f in i['formats']])
+    return find_unique(pred, i['formats'])['url']
+
+def youtube_url_alt(url):
+    args = ['yt-dlp', '--format', 'bestaudio', '--print', 'urls', url]
+    return subprocess.check_output(args, text=True)
+
 def main():
-    yt_fmt = os.getenv('YOUTUBE_FORMAT', '251')
-    tr('gst12.py: YOUTUBE_FORMAT=%s, no_overridess=%s' % (yt_fmt, no_overrides))
+    tr('gst12: YOUTUBE_FORMAT=%s, no_overridess=%s' % (yt_fmt, no_overrides))
     def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
-    def youtube_url(url):
-        i = yt_dlp().extract_info(url, download=False)
-        def pred(i): return i['format_id'] == yt_fmt
-        tr('formats: %s' % [f['format_id'] for f in i['formats']])
-        return find_unique(pred, i['formats'])['url']
 
     p = Gst.ElementFactory.make("playbin3", None)
     stop, pause, play = map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING])
