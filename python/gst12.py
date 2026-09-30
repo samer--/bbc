@@ -120,12 +120,35 @@ def main():
 
     p = Gst.ElementFactory.make("playbin3", None)
     stop, pause, play = map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING])
+    def report_state(label=''):
+        """Print current GStreamer pipeline state to stdout for Prolog sync."""
+        _, cur, _ = p.get_state(Gst.CLOCK_TIME_NONE)
+        names = {Gst.State.NULL: 'null', Gst.State.PAUSED: 'paused', Gst.State.PLAYING: 'playing'}
+        info = label + (' ' if label else '')
+        print_('%sstate %s' % (info, names.get(cur, 'unknown')))
+    def safe_uri(p, stop, pause, sync, url_fn, a):
+        try:
+            u = url_fn(a[0])
+            stop()
+            p.set_property('uri', u)
+            pause()
+            sync()
+            print_('uri_ok')
+        except Exception as e:
+            print_('uri_error %s' % str(e).replace(' ', '_'))
+            report_state('uri_error')
+    def handle_gst_error(m):
+        gerr, _debug = m.parse_error()
+        _, cur, _ = p.get_state(Gst.CLOCK_TIME_NONE)
+        names = {Gst.State.NULL: 'null', Gst.State.PAUSED: 'paused', Gst.State.PLAYING: 'playing'}
+        msg = str(gerr).replace(' ', '_')
+        print_('error %s %s' % (names.get(cur, 'null'), msg))
     durations = bind(changes, [0.0])
     wrapper = [identity] # MUTABLE cell . alternatively: [bind(tracef, 'player')]
 
     events = def_consult(const(None),
                    { MT.EOS:          compose(print_, const('eos'))
-                   , MT.ERROR:        compose(rpt('error'), M.parse_error)
+                   , MT.ERROR:        handle_gst_error
                    , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag)
                    , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
                                                   guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
@@ -144,7 +167,8 @@ def main():
                   , 'id_pos':   lambda a: rpt('id_pos')('%s:%s' % (a[0], position()))
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
-                  , 'uri':      lambda a: (stop(), p.set_property('uri', url(a[0])), pause(), sync())
+                  , 'uri':      lambda a: safe_uri(p, stop, pause, sync, url, a)
+                  , 'state':    lambda _: report_state()
                   , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
                   , '':         lambda _: (print_stderr('quitting'), exit())
                   })
