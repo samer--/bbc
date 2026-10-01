@@ -28,8 +28,7 @@
    @todo
    Core
       seek, CLP approach?
-      more efficient artist-album-track database view
-      review process synch and comms, see eg Erlang approach
+      review process sync and comms, see eg Erlang approach
 
    Control
       rewind if playing track where current position is at end
@@ -38,17 +37,9 @@
       version_queue/2 -> version tree, undo etc. (plchanges?)
       selective restore - everything vs just queue.
 
-   Protocol:
-      clearerror (check error in status?) consume, mutliple group
-
    Extensions:
       Actions on timer: update db, add certain programmes to playlist
-      Use tracklist for cool stuff:
-      - seek to nth/prev/next track
-      - query current track info
-
-   Playlists
-      More playlist protocol: listing and loading
+      Get more info from BBC tracklist, like current track metadata
  */
 
 %! mpd_init is det.
@@ -62,7 +53,7 @@
 mpd_init :-
    get_time(Now), flag(update, _, 1),
    maplist(init_state, [volume, queue, player, consume, single], [50, 0-[], nothing, 0, 1]),
-   maplist(set_vstate, [start_time, dbtime], [Now, Now]),
+   maplist(set_vstate, [start_time, dbtime, error], [Now, Now, nothing]),
    retractall(version_queue(_,_)), assert(version_queue(0, [])).
 
 save_state(Filename) :- with_output_to_file(Filename, excl(listing(mpd_state:state))).
@@ -116,11 +107,13 @@ command(playlistinfo,  maybe(a(range), R)) :-> reading_state(queue, playlistinfo
 command(playlistid,    [])                 :-> reading_state(queue, playlistinfo(nothing)).
 command(plchanges,     a(nat(V)))          :-> reading_state(queue, plchanges(V)).
 command(currentsong,   [])                 :-> reading_state(queue-player, currentsong).
+command(clearerror,    [])  :-> {excl(set_vstate(error, nothing))}.
 command(listplaylists, arb) :-> [].
 command(tagtypes, []) :-> foldl(report(tagtype), ['Artist', 'Album', 'Title', 'Track', 'Date', 'Comment', 'AvailableUntil']).
 command(tagtypes, foldl(a(atom), [_Cmd|_Args])) :-> [].
 command(outputs,  []) :-> foldl(report, [outputid-0, outputname-'Default output', outputenabled-1]).
-command(status,   []) :-> foldl(report_state, [volume, single, consume]), reading_state(queue-player, report_status).
+command(status,   []) :-> foldl(report_state, [volume, single, consume]), report_error,
+                          reading_state(queue-player, report_status).
 command(stats,    []) :-> {stats(Stats)}, foldl(report, Stats).
 command(decoders, []) :-> [].
 command(list,     list_args(Tag, Filters, GroupBy)) :-> db_list(Tag, Filters, GroupBy).
@@ -159,6 +152,7 @@ fqueue(P, V2, Q2, ((V1-Q1)-P1)-[playlist|C1], ((V2-Q2)-P2)-C2) :- call(P, (Q1-P1
 reordering_queue(Action) :- updating_queue_state(\< preserving_player(Action)).
 preserving_player(P) --> (P // trans(Songs1, Songs2)) <\> fmaybe(update_pos(Songs1, Songs2)).
 
+report_error --> {vstate(error, Error)}, maybe(report(error), Error).
 report_state(K) --> reading_state(K, report(K)).
 uptime(T) :- get_time(Now), vstate(start_time, Then), T is integer(Now - Then).
 stats([uptime-T, db_update-DD|DBStats]) :- uptime(T), vstate(dbtime, D), round(D,DD), db_stats(DBStats).
