@@ -64,7 +64,7 @@ gst_message(format,   [format-just(Rate:Fmt:Ch)]) -->
 
 % -- error and state-sync messages (Python → Prolog sync protocol) --
 % FIXME: synchronise with mutex from commands module?
-gst_message(state, []) --> " ", atom(GS), {state(player, PS), sync_player_state(GS, PS)}.
+gst_message(state, []) --> " ", broken([], atom(GS)), {state(player, PS), sync_player_state(GS, PS)}.
 gst_message(error, [error-just(Msg)]) --> " ", broken([], string(Msg)).
 
 sample_fmt(f) --> "F", !, arb.

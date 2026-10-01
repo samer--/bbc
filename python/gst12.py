@@ -122,6 +122,7 @@ def youtube_url_cmd(url):
     return subprocess.check_output(args, text=True)
 
 def main():
+    import time
     tr('gst12: gst overrides? %s, yt-dlp command? %s' % (not no_overrides, yt_dlp_use_cmd))
     youtube_url = youtube_url_cmd if yt_dlp_use_cmd  else youtube_url_api
     def stream_url(x): return youtube_url(x) if 'www.youtube.com' in x else x
@@ -133,7 +134,8 @@ def main():
 
     def rpt_error_state(e): rpt('error')(e); rpt('state')(state_name(p))
     def sync():     p.get_state(Gst.CLOCK_TIME_NONE)
-    def load(u):    stop(); p.set_property('uri', stream_url(u)); pause(); sync()
+    def load(u):    stop(); p.set_property('uri', stream_url(u)); sync(); time.sleep(0.5); pause(); sync(); 
+    def load1(u):   stop(); p.set_property('uri', stream_url(u)); sync(); 
     def position(): return ns_to_s(max(0, p.query_position(_FORMAT_TIME)[1]))
     def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t)), sync()
     def case(d):    return tuncurry(def_consult(lambda _: print_('unrecognised'), d))
@@ -148,14 +150,17 @@ def main():
                })
 
     player = case({ 'stop':     lambda _: (stop(), p.set_property('uri', ''), durations(0.0))
+                  , 'stoop':    lambda _: stop()
                   , 'pause':    lambda _: pause()
                   , 'play':     lambda _: play()
                   , 'volume':   lambda a: p.set_property('volume', float(a[0]))
                   , 'position': lambda _: rpt('position')(position())
+                  , 'get_prop': lambda a: rpt('property')((a[0], p.get_property(a[0])))
                   , 'id_pos':   lambda a: rpt('id_pos')('%s:%s' % (a[0], position()))
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
                   , 'uri':      lambda a: catch(rpt_error_state, load, a[0])
+                  , 'uri1':      lambda a: catch(rpt_error_state, load1, a[0])
                   , 'state':    lambda _: rpt('state')(state_name(p))
                   , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
                   , '':         lambda _: (print_stderr('quitting'), exit())
