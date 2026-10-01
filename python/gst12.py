@@ -21,6 +21,7 @@ def compose(*args): return reduce(compose2, args)
 def const(x):       return lambda _: x
 def tuncurry(f):    return lambda args: reduce(lambda f, x: f(x), args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
+def fst(xy): x, _ = xy; return x
 def snd(xy): _, y = xy; return y
 def decons(xs):     return xs[0], xs[1:]
 def not_empty(x):   return len(x) > 0
@@ -42,6 +43,10 @@ def with_as(r,f):
 def json_read(f): return with_as(open(f, 'r'), json.load)
 def unsingleton(x): (x,) = x; return x
 def find_unique(p, xs): return unsingleton(filter(p, xs))
+
+def catch(on_exc, f, x):
+    try: return f(x)
+    except Exception as e: return on_exc(e)
 
 _Null = object()
 def memoise(f):
@@ -73,6 +78,8 @@ _FORMAT_TIME = Gst.Format(Gst.Format.TIME)
 ns_to_s, s_to_ns = fork(divby, mul)(10 ** 9)
 mutex = threading.Lock()
 lock = Context(lambda: (mutex.release, mutex.acquire()))
+states = {Gst.State.NULL: 'null', Gst.State.READY: 'ready',
+          Gst.State.PAUSED: 'paused', Gst.State.PLAYING: 'playing'}
 
 def to_maybe(t): valid, x = t; return x if valid else None
 def maybe_int(c, k): return to_maybe(c.get_int(k))
@@ -84,6 +91,7 @@ def print_(s):
 def fmt_cap(c): return '%s:%s:%s' % (maybe_int(c,'rate'), c.get_string('format') or 'F', maybe_int(c, 'channels'))
 def rpt_cap(c): return rpt('format')(with_structure(c.get_structure(0), fmt_cap))
 def stream_caps(m): return m.parse_stream_collection().get_stream(0).get_caps()
+def state_name(p): return states.get(p.get_state(Gst.CLOCK_TIME_NONE)[1], 'unknown')
 
 def changes(state, x):
     if x == state[0]: return None
@@ -116,49 +124,29 @@ def youtube_url_cmd(url):
 def main():
     tr('gst12: gst overrides? %s, yt-dlp command? %s' % (not no_overrides, yt_dlp_use_cmd))
     youtube_url = youtube_url_cmd if yt_dlp_use_cmd  else youtube_url_api
-    def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
+    def stream_url(x): return youtube_url(x) if 'www.youtube.com' in x else x
 
     p = Gst.ElementFactory.make("playbin3", None)
     stop, pause, play = map(delay(p.set_state), [Gst.State.NULL, Gst.State.PAUSED, Gst.State.PLAYING])
-    def report_state(label=''):
-        """Print current GStreamer pipeline state to stdout for Prolog sync."""
-        _, cur, _ = p.get_state(Gst.CLOCK_TIME_NONE)
-        names = {Gst.State.NULL: 'null', Gst.State.PAUSED: 'paused', Gst.State.PLAYING: 'playing'}
-        info = label + (' ' if label else '')
-        print_('%sstate %s' % (info, names.get(cur, 'unknown')))
-    def safe_uri(p, stop, pause, sync, url_fn, a):
-        try:
-            u = url_fn(a[0])
-            stop()
-            p.set_property('uri', u)
-            pause()
-            sync()
-            print_('uri_ok')
-        except Exception as e:
-            print_('uri_error %s' % str(e).replace(' ', '_'))
-            report_state('uri_error')
-    def handle_gst_error(m):
-        gerr, _debug = m.parse_error()
-        _, cur, _ = p.get_state(Gst.CLOCK_TIME_NONE)
-        names = {Gst.State.NULL: 'null', Gst.State.PAUSED: 'paused', Gst.State.PLAYING: 'playing'}
-        msg = str(gerr).replace(' ', '_')
-        print_('error %s %s' % (names.get(cur, 'null'), msg))
     durations = bind(changes, [0.0])
     wrapper = [identity] # MUTABLE cell . alternatively: [bind(tracef, 'player')]
 
-    events = def_consult(const(None),
-                   { MT.EOS:          compose(print_, const('eos'))
-                   , MT.ERROR:        handle_gst_error
-                   , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag)
-                   , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
-                                                  guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
-                   , MT.STREAM_COLLECTION: compose(rpt_cap, stream_caps)
-                   })
-    def handle_msg(m): events(m.type)(m)
+    def rpt_error_state(e): rpt('error')(e); rpt('state')(state_name(p))
     def sync():     p.get_state(Gst.CLOCK_TIME_NONE)
+    def load(u):    stop(); p.set_property('uri', stream_url(u)); pause(); sync()
     def position(): return ns_to_s(max(0, p.query_position(_FORMAT_TIME)[1]))
     def seek(t):    return p.seek_simple(_FORMAT_TIME, Gst.SeekFlags.FLUSH, s_to_ns(t)), sync()
     def case(d):    return tuncurry(def_consult(lambda _: print_('unrecognised'), d))
+
+    events = def_consult(const(None),
+               { MT.EOS:          compose(print_, const('eos'))
+               , MT.ERROR:        compose(rpt_error_state, fst, M.parse_error)
+               , MT.TAG:          compose(maybe(rpt('bitrate')), guard(pos), tl_bitrate, M.parse_tag)
+               , MT.DURATION_CHANGED: compose(maybe(compose(rpt('duration'), ns_to_s)), maybe(durations),
+                                              guard(pos), lambda _: p.query_duration(_FORMAT_TIME)[1])
+               , MT.STREAM_COLLECTION: compose(rpt_cap, stream_caps)
+               })
+
     player = case({ 'stop':     lambda _: (stop(), p.set_property('uri', ''), durations(0.0))
                   , 'pause':    lambda _: pause()
                   , 'play':     lambda _: play()
@@ -167,12 +155,13 @@ def main():
                   , 'id_pos':   lambda a: rpt('id_pos')('%s:%s' % (a[0], position()))
                   , 'seekrel':  lambda a: seek(float(a[0]) + position())
                   , 'seek':     lambda a: seek(float(a[0]))
-                  , 'uri':      lambda a: safe_uri(p, stop, pause, sync, url, a)
-                  , 'state':    lambda _: report_state()
+                  , 'uri':      lambda a: catch(rpt_error_state, load, a[0])
+                  , 'state':    lambda _: rpt('state')(state_name(p))
                   , 'trace':    lambda a: wrapper.__setitem__(0, {'on': bind(tracef, 'player'), 'off': identity}[a[0]])
                   , '':         lambda _: (print_stderr('quitting'), exit())
                   })
     def handle_messages(bus):
+        def handle_msg(m): events(m.type)(m)
         while True: handle_msg(bus.timed_pop(Gst.CLOCK_TIME_NONE))
 
     t = threading.Thread(target=handle_messages, args=[p.get_bus()])

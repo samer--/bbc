@@ -1,6 +1,6 @@
 :- module(tools, [(+)//1, (*)//1, parse_head//2, nat//1, num//1, atom//1, quoted//1, quoted//2, in/2, fnth/5,
                   decimal//0, report//1, report//2, select_nth/4, maybe//2, maybe/2, fmaybe/3, fjust/3, flip/4,
-                  tracing_death/1, spawn/1, setup_stream/2, registered/2, thread/2]).
+                  tracing_death/1, spawn/1, setup_stream/2, string//1, registered/2, thread/2]).
 
 :- use_module(library(listutils), [zip/3]).
 :- use_module(library(dcg_core), [(//)//2, list//1]).
@@ -52,6 +52,8 @@ num(N,S1,S2) :- ground(N), !, format(codes(S1,S2),'~w',[N]).
 num(N,S1,S2) :- list(C,S1,S2), number_codes(N,C).
 atom(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~w',[A]).
 atom(A,S1,S2) :- list(C,S1,S2), atom_codes(A,C).
+string(A,S1,S2) :- ground(A), !, format(codes(S1,S2),'~s',[A]).
+string(A,S1,S2) :- list(C,S1,S2), string_codes(A,C).
 
 quoted(P, X) --> quoted(call(P, X)).
 quoted(P) --> "\"", esc(esc_qq, Codes), "\"", {phrase(P, Codes)}.

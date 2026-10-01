@@ -8,7 +8,7 @@
 :- use_module(library(snobol), [break//1, arb//0, any//1]).
 :- use_module(state, [state/2, set_states/2, vstate/2, set_vstate/2]).
 :- use_module(protocol, [notify_all/1]).
-:- use_module(tools,  [tracing_death/1, parse_head//2, atom//1, num//1, nat//1,
+:- use_module(tools,  [tracing_death/1, parse_head//2, atom//1, num//1, nat//1, string//1,
                        fmaybe/3, maybe/2, registered/2, setup_stream/2, thread/2]).
 
 :- multifile notify_eos/0, id_wants_bookmark/1.
@@ -63,12 +63,9 @@ gst_message(format,   [format-just(Rate:Fmt:Ch)]) -->
    " ", split_on_colon([nat(Rate), sample_fmt(Fmt), nat(Ch)]).
 
 % -- error and state-sync messages (Python → Prolog sync protocol) --
-gst_message(uri_ok, []) --> [].
-gst_message(uri_error, [error-just(Msg)]) --> " ", broken([], atom(Msg)).
-gst_message(state, []) --> " ", atom(State), {sync_player_state(State)}.
-gst_message(error, [error-just(Msg)]) -->
-   " ", atom(State), " ", broken([], atom(Msg)),
-   {sync_player_state(State)}.
+% FIXME: synchronise with mutex from commands module?
+gst_message(state, []) --> " ", atom(GS), {state(player, PS), sync_player_state(GS, PS)}.
+gst_message(error, [error-just(Msg)]) --> " ", broken([], string(Msg)).
 
 sample_fmt(f) --> "F", !, arb.
 sample_fmt(N) --> [_], nat(N), ([]; any(`LB_`), arb).
@@ -79,19 +76,18 @@ set_global(K-V) :- set_vstate(K, V). %, notify_all([player]). % Upsets MPD Droid
 %  Reconcile Prolog's player state with the Python-reported GStreamer
 %  pipeline state.  If the player is null but Prolog thinks it's active,
 %  reset it to nothing so the next play command will re-cue.
-sync_player_state(null) :- !,
-   state(player, nothing), !.          % already consistent
-sync_player_state(null) :- !,
-   debug(mpd(gst, 0), 'Player state desync: Prolog thinks active, Python says null', []),
+sync_player_state(null, nothing) :-  !. % already consistent
+sync_player_state(null, _) :- !,
+   debug(mpd(gst, s(s(0))), 'Player state desync: Prolog thinks active, Python says null', []),
    set_states(player, nothing),
-   set_vstate(error, nothing),
    notify_all([player]).
-sync_player_state(paused) :- !,
-   state(player, nothing), !,          % Prolog thinks stopped, Python says paused
-   debug(mpd(gst, 0), 'Player state desync: Prolog thinks stopped, Python says paused', []),
-   set_states(player, just(ps(0, just(pause-0.0/0.0)))),
+sync_player_state(paused, nothing) :- !,
+   debug(mpd(gst, s(s(0))), 'Player state desync: Prolog thinks stopped, Python says paused', []),
+   set_states(player, just(ps(0, just(pause-0.0/1.0)))), % FIXME: song num? duration??
    notify_all([player]).
-sync_player_state(_) :- !.             % playing or already consistent
+sync_player_state(GS, PS) :-
+   debug(mpd(gst, s(s(0))), 'Player state desync: fall-through(~w, ~w)', [GS, PS]).
+
 set_volume(V) :- FV is (V/100.0)^1.75, send(fmt("volume ~5f", [FV])).
 
 send(P) :-
