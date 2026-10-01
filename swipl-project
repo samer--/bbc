@@ -1,0 +1,2 @@
+user:file_search_path(python, 'python').
+user:file_search_path(bbc, 'prolog').
