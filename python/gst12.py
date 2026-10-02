@@ -90,6 +90,7 @@ def changes(state, x):
     state[0] = x; return x
 
 yt_fmt = os.getenv('GST12_YTDLP_FORMAT', '251')
+yt_dlp_use_cmd = bool(int(os.getenv('GST12_YTDLP_USE_CMD','0')))
 
 @memoise
 def yt_dlp():
