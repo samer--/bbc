@@ -2,6 +2,7 @@
 import sys
 import gi
 import os
+import json
 import threading
 import operator as op
 import importlib.util
@@ -22,6 +23,7 @@ def tuncurry(f):    return lambda args: reduce(lambda f, x: f(x), args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
 def snd(xy): _, y = xy; return y
 def decons(xs):     return xs[0], xs[1:]
+def not_empty(x):   return len(x) > 0
 def mul(y):         return lambda x: x * y
 def divby(y):       return lambda x: float(x) / y
 def maybe(f):       return lambda x: None if x is None else f(x)
@@ -37,6 +39,7 @@ def apply_to(x,f): return f(x)
 def with_as(r,f):
     with r as x: return f(x)
 
+def json_read(f): return with_as(open(f, 'r'), json.load)
 def unsingleton(x): (x,) = x; return x
 def find_unique(p, xs): return unsingleton(filter(p, xs))
 
@@ -86,33 +89,32 @@ def changes(state, x):
     if x == state[0]: return None
     state[0] = x; return x
 
-yt_fmt = os.getenv('YOUTUBE_FORMAT', '251')
+yt_fmt = os.getenv('GST12_YTDLP_FORMAT', '251')
 
 @memoise
 def yt_dlp():
     import yt_dlp
-    params = {'logtostderr': True, 
-              'cookiesfrombrowser': ('firefox',),
-              'js_runtimes': {'deno': {'path':os.getenv('DENO_BINARY', 'deno')}},
-              'remote_components':['ejs:github']}
-    tr('gst12: Initialising yt-dlp...')
-    yt=yt_dlp.YoutubeDL(params=params, auto_init=False)
+    params = maybe(json_read)(guard(not_empty)(os.getenv('GST12_YTDLP_CONFIG')))
+    tr('gst12: Initialising yt-dlp with %s...' % params)
+    yt=yt_dlp.YoutubeDL(params=dict(params or {}, logtostderr=True), auto_init=False)
     yt.add_info_extractor(yt.get_info_extractor('Youtube'))
     tr('gst12: Initialised yt-dlp object.')
     return yt
 
-def youtube_url(url):
+def youtube_url_api(url):
     i = yt_dlp().extract_info(url, download=False)
     def pred(i): return i['format_id'] == yt_fmt
-    tr('formats: %s' % [f['format_id'] for f in i['formats']])
+    tr('formats: %s' % ' '.join([f['format_id'] for f in i['formats']]))
     return find_unique(pred, i['formats'])['url']
 
-def youtube_url_alt(url):
-    args = ['yt-dlp', '--format', 'bestaudio', '--print', 'urls', url]
+def youtube_url_cmd(url):
+    import subprocess
+    args = ['yt-dlp', '-v', '--format', 'bestaudio', '--print', 'urls', url]
     return subprocess.check_output(args, text=True)
 
 def main():
-    tr('gst12: YOUTUBE_FORMAT=%s, no_overridess=%s' % (yt_fmt, no_overrides))
+    tr('gst12: gst overrides? %s, yt-dlp command? %s' % (not no_overrides, yt_dlp_use_cmd))
+    youtube_url = youtube_url_cmd if yt_dlp_use_cmd  else youtube_url_api
     def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
 
     p = Gst.ElementFactory.make("playbin3", None)
