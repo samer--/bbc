@@ -23,6 +23,7 @@ def tuncurry(f):    return lambda args: reduce(lambda f, x: f(x), args, f)
 def fork(f, g):     return lambda x: (f(x), g(x))
 def snd(xy): _, y = xy; return y
 def decons(xs):     return xs[0], xs[1:]
+def not_empty(x):   return len(x) > 0
 def mul(y):         return lambda x: x * y
 def divby(y):       return lambda x: float(x) / y
 def maybe(f):       return lambda x: None if x is None else f(x)
@@ -93,26 +94,27 @@ yt_fmt = os.getenv('GST12_YTDLP_FORMAT', '251')
 @memoise
 def yt_dlp():
     import yt_dlp
-    params = maybe(json_read)(os.getenv('GST12_YTDLP_CONFIG'))
+    params = maybe(json_read)(guard(not_empty)(os.getenv('GST12_YTDLP_CONFIG')))
     tr('gst12: Initialising yt-dlp with %s...' % params)
     yt=yt_dlp.YoutubeDL(params=dict(params or {}, logtostderr=True), auto_init=False)
     yt.add_info_extractor(yt.get_info_extractor('Youtube'))
     tr('gst12: Initialised yt-dlp object.')
     return yt
 
-def youtube_url(url):
+def youtube_url_api(url):
     i = yt_dlp().extract_info(url, download=False)
     def pred(i): return i['format_id'] == yt_fmt
-    tr('formats: %s' % [f['format_id'] for f in i['formats']])
+    tr('formats: %s' % ' '.join([f['format_id'] for f in i['formats']]))
     return find_unique(pred, i['formats'])['url']
 
-def youtube_url_alt(url):
+def youtube_url_cmd(url):
     import subprocess
     args = ['yt-dlp', '-v', '--format', 'bestaudio', '--print', 'urls', url]
     return subprocess.check_output(args, text=True)
 
 def main():
-    tr('gst12: Using gst overrides? %s' % (not no_overrides))
+    tr('gst12: gst overrides? %s, yt-dlp command? %s' % (not no_overrides, yt_dlp_use_cmd))
+    youtube_url = youtube_url_cmd if yt_dlp_use_cmd  else youtube_url_api
     def url(x): return youtube_url(x) if 'www.youtube.com' in x else x
 
     p = Gst.ElementFactory.make("playbin3", None)
