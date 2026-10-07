@@ -26,10 +26,14 @@ parse(Line0) ->
     end.
 
 %% format_reply/1: Format a list of {Key, Value} pairs as MPD response lines
-%% Returns an iolist ready for gen_tcp:send
+%% Returns an iolist ready for gen_tcp:send, ending with "OK\n"
 format_reply(Pairs) ->
-    Lines = [[K, <<": ">>, val(V), <<"\n">>] || {K, V} <- Pairs],
-    [Lines, <<"OK\n">>].
+    [format_result(Pairs), <<"OK\n">>].
+
+%% format_result/1: Format pairs WITHOUT trailing OK (for command lists)
+format_result([]) -> [];
+format_result(Pairs) ->
+    [[K, <<": ">>, val(V), <<"\n">>] || {K, V} <- Pairs].
 
 format_ok() ->
     <<"OK\n">>.
