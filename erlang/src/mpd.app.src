@@ -1,0 +1,20 @@
+{application, mpd, [
+    {description, "Actor-based MPD server proof-of-concept"},
+    {vsn, "0.1.0"},
+    {modules, [
+        mpd_app,
+        mpd_sup,
+        mpd_client_sup,
+        mpd_state,
+        mpd_client,
+        mpd_acceptor,
+        mpd_player,
+        mpd_protocol
+    ]},
+    {registered, [mpd_state, mpd_acceptor, mpd_player]},
+    {applications, [kernel, stdlib]},
+    {mod, {mpd_app, []}},
+    {env, [
+        {port, 6600}
+    ]}
+]}.
