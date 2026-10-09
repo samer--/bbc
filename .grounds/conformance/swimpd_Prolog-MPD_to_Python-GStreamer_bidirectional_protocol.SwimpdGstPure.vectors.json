@@ -1,0 +1,36 @@
+{
+  "format": "grounds-vectors/1",
+  "technique": "runs",
+  "engine": "tlc",
+  "function": "SwimpdGstPure",
+  "symbol": "swimpd Prolog-MPD to Python-GStreamer bidirectional protocol",
+  "params": [
+    "swimpd_mutex",
+    "or",
+    "pipe_p2g",
+    "pipe_g2p",
+    "gst_mailbox",
+    "pc_mpd",
+    "pc_gst",
+    "pc_pymain",
+    "pc_pybus",
+    "prolog_player",
+    "python_pipeline",
+    "prolog_position",
+    "pending_pos_req",
+    "python_busy",
+    "gst_next_event"
+  ],
+  "signature": null,
+  "model": {
+    "hash": "2e2978da04949e30c9d6ee7af25a94f744ca48a7665a03c69da6632973431df2"
+  },
+  "assuming": null,
+  "vectors": [],
+  "without": [
+    {
+      "region": 1,
+      "why": "state_desync_play_then_eos: Semantic errors:; *** Errors: 1; line 3, col 55 to line 3, col 56 of module GroundsTrap0; Error: Parsing or semantic analysis failed."
+    }
+  ]
+}
