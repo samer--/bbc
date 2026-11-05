@@ -348,3 +348,15 @@ The `uri`+`play` trace and the mutex-contention deadlock window (MPD holds `swim
 model does not yet force `MPD_WaitPos` and `GST` contention in the same run. Adding a `loading`
 state to `prolog_player` and a `uri`-first scenario is the natural next extension to confirm the
 `paused`-while-`playing` variant and the transient deadlock.
+
+### 7.4 Re-verification (2026-10-19, remote Grounds instance)
+
+After a Grounds server reset wiped the recorded sessions, the verification was re-run on the
+remote instance (session `as_01m6p91vdfk4jmp3k543x1jcsj`) with the same spec and configs.
+Results are identical to §7.1:
+
+- `QuiescentConsistent` — **violated**, the same 8-step counterexample (`play` then `eos`
+  leaves `prolog_player = "nothing"` while `python_pipeline = "playing"`), recorded as
+  refuted evidence.
+- `TypeInvariant` + `MutexSafety` under `SoundnessConstraint` — **holds within bounds**,
+  44,126 states, depth 36.
